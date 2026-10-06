@@ -1,0 +1,26 @@
+schema_version: embodiment/v0.1
+embodiment:
+  id: mock.ee_robot
+  name: Mock EE Robot
+frames:
+  default_action_frame: base
+devices:
+  - id: right_arm
+    type: arm
+    capabilities: [ee_state, ee_delta]
+  - id: right_gripper
+    type: gripper
+    capabilities: [gripper_position]
+control:
+  supported_modes:
+    - type: ee_delta
+      target: right_arm
+      frame: base
+      max_translation_delta: [0.05, 0.05, 0.05]
+      frequency_hz: 20
+safety:
+  requires_enable: true
+  supports_estop: true
+adapter:
+  id: mock
+  version: 0.1.0
