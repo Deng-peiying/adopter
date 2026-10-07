@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cross-embodiment.dev/schemas/robot-instance/v0.1",
+  "title": "Robot Instance",
+  "type": "object",
+  "required": ["schema_version", "instance", "robot"],
+  "properties": {
+    "schema_version": {"const": "robot-instance/v0.1"},
+    "instance": {"type": "object", "required": ["id"], "properties": {"id": {"type": "string"}}},
+    "robot": {"type": "object", "required": ["package", "version"], "properties": {"package": {"type": "string"}, "version": {"type": "string"}}},
+    "backend": {"type": "object"},
+    "connection": {"type": "object"},
+    "components": {"type": "object"},
+    "calibration": {"type": "object"},
+    "tool": {"type": "object"},
+    "overrides": {"type": "object"}
+  },
+  "additionalProperties": true
+}

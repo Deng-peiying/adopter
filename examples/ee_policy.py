@@ -1,5 +1,7 @@
+from pathlib import Path
+
 from cross_embodiment import Runtime, connect
-from cross_embodiment.types import Action, ActionSpec
+from cross_embodiment.protocol.types import Action, ActionSpec
 
 
 class DemoEEPolicy:
@@ -24,7 +26,7 @@ class DemoEEPolicy:
         )
 
 
-robot = connect("mock", "manifests/mock_ee.yaml")
+robot = connect("mock", Path(__file__).resolve().parent / "assets/mock_ee.yaml")
 runtime = Runtime(robot, DemoEEPolicy())
 report = runtime.validate()
 print(report.status, report.summary())

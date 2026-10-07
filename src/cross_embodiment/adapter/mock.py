@@ -3,8 +3,9 @@ from __future__ import annotations
 from copy import deepcopy
 
 from ..errors import CommandRejected, LifecycleError
-from ..manifest import EmbodimentManifest
-from ..types import Command, CommandResult, Pose, RobotState, SafetyState
+from ..driver.health import HealthReport
+from ..hardware.manifest import EmbodimentManifest
+from ..protocol.types import Command, CommandResult, Pose, RobotState, SafetyState
 
 
 class MockAdapter:
@@ -25,6 +26,9 @@ class MockAdapter:
 
     def load_manifest(self) -> EmbodimentManifest:
         return self._manifest
+
+    def configure(self) -> None:
+        return None
 
     def connect(self) -> None:
         self._connected = True
@@ -65,6 +69,9 @@ class MockAdapter:
             raise CommandRejected(f"Mock adapter does not implement {command.mode}")
         self.commands.append(command)
         return CommandResult(True, "accepted", self._sequence)
+
+    def health(self) -> HealthReport:
+        return HealthReport(self._connected, "ready" if self._connected else "disconnected")
 
     def _apply_ee_delta(self, command: Command) -> None:
         pose = self._state.ee_poses.get(command.target)
