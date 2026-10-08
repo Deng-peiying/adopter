@@ -8,7 +8,7 @@ __pycache__/
 coverage/
 
 # Local Python environments
-.venv/
+.venv*/
 venv/
 
 # Build and packaging artifacts
@@ -23,3 +23,5 @@ outputs/*
 
 # Local files
 .DS_Store
+.vscode/
+.ce/runtime/
