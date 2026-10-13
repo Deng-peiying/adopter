@@ -9,6 +9,12 @@ description = "Cross-embodiment robot SDK and EE-first runtime"
 requires-python = ">=3.10"
 dependencies = ["PyYAML>=6.0"]
 
+[project.optional-dependencies]
+# PyKDL is supplied by ROS/Ubuntu as python3-pykdl; it is intentionally not a
+# core SDK dependency. This extra documents the optional URDF tooling used by
+# broader robot models while the verified MVP chain uses its fixed URDF subset.
+kinematics = ["urdf-parser-py>=0.0.4"]
+
 [project.scripts]
 ce = "cross_embodiment.cli:main"
 
