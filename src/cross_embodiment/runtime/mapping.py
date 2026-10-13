@@ -8,6 +8,10 @@ from ..protocol.types import Action, Command
 class ActionMapper:
     def map(self, action: Action, manifest: EmbodimentManifest) -> list[Command]:
         values = action.values
+        if hasattr(values, "__dataclass_fields__"):
+            from dataclasses import asdict
+
+            values = asdict(values)
         if action.spec.type == "ee_delta":
             translation = tuple(float(value) for value in values["translation"])
             rotation = tuple(float(value) for value in values.get("rotation", (0, 0, 0)))
@@ -17,7 +21,25 @@ class ActionMapper:
             return commands
         if action.spec.type in ("joint_position", "bimanual_joint_position"):
             positions = values.get("positions") if isinstance(values, dict) else values
-            if not isinstance(positions, (list, tuple)):
-                raise SafetyViolation("Joint position action must contain a sequence")
-            return [Command(action.spec.target, action.spec.type, {"positions": tuple(float(value) for value in positions)}, action.spec.frame)]
+            if isinstance(positions, dict):
+                normalized = {str(name): float(value) for name, value in positions.items()}
+            elif isinstance(positions, (list, tuple)):
+                normalized = tuple(float(value) for value in positions)
+            else:
+                raise SafetyViolation("Joint position action must contain a sequence or named joint mapping")
+            return [Command(action.spec.target, action.spec.type, {"positions": normalized}, action.spec.frame)]
+        if action.spec.type == "cartesian_pose":
+            pose = values.get("pose", values)
+            if hasattr(pose, "__dataclass_fields__"):
+                from dataclasses import asdict
+
+                pose = asdict(pose)
+            if not isinstance(pose, dict) or "position" not in pose or "quaternion_xyzw" not in pose:
+                raise SafetyViolation("Cartesian pose action requires position and quaternion_xyzw")
+            position = tuple(float(value) for value in pose["position"])
+            quaternion = tuple(float(value) for value in pose["quaternion_xyzw"])
+            if len(position) != 3 or len(quaternion) != 4:
+                raise SafetyViolation("Cartesian pose must have 3 position and 4 quaternion values")
+            frame = pose.get("frame", action.spec.frame)
+            return [Command(action.spec.target, "cartesian_pose", {"position": position, "quaternion_xyzw": quaternion}, frame)]
         raise SafetyViolation(f"Unsupported action mode: {action.spec.type}")

@@ -191,7 +191,14 @@ def _asset_digest(path: Path) -> str:
     if path.is_file():
         return hashlib.sha256(path.read_bytes()).hexdigest()
     digest = hashlib.sha256()
-    files = sorted(item for item in path.rglob("*") if item.is_file())
+    ignored = {".git", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache"}
+    files = sorted(
+        item
+        for item in path.rglob("*")
+        if item.is_file()
+        and not any(part in ignored for part in item.relative_to(path).parts)
+        and item.suffix != ".pyc"
+    )
     for item in files:
         relative = item.relative_to(path).as_posix()
         digest.update(relative.encode("utf-8"))

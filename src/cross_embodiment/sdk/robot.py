@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+from dataclasses import asdict, is_dataclass
 from typing import Callable, Any
 
 from ..adapter.mock import MockAdapter
 from ..hardware.manifest import EmbodimentManifest, load_manifest
-from ..protocol.types import Command, RobotState
+from ..protocol.types import Action, ActionSpec, Command, CommandResult, JointState, RobotState
+from ..runtime.mapping import ActionMapper
+from ..runtime.safety import SafetyGuard
 
 
 class Lifecycle:
@@ -60,8 +63,65 @@ class Robot:
     def state(self) -> RobotState:
         return self.adapter.get_state()
 
-    def command(self, command: Command):
-        return self.adapter.send_command(command)
+    def capabilities(self) -> dict[str, Any]:
+        getter = getattr(self.adapter, "capabilities", None)
+        return getter() if getter is not None else self.manifest.capabilities()
+
+    def observe(self) -> RobotState:
+        return self.state()
+
+    def get_joint_state(self, device_id: str) -> JointState:
+        if self.manifest.device(device_id) is None:
+            raise ValueError(f"Unknown device: {device_id}")
+        getter = getattr(self.adapter, "get_joint_state", None)
+        if getter is None:
+            raise NotImplementedError(f"Backend has no measured joint-state binding for {device_id}")
+        return getter(device_id)
+
+    def move_joints(self, device_id: str, positions: dict[str, float]) -> CommandResult:
+        device = self.manifest.device(device_id)
+        if device is None or not self.manifest.supports("joint_position", device_id):
+            raise ValueError(f"Device {device_id!r} does not support joint_position")
+        supports = getattr(self.adapter, "supports_action", None)
+        if supports is not None and not supports("joint_position", device_id):
+            raise ValueError(f"Device {device_id!r} has no active joint-position binding")
+        expected = {joint.get("canonical_name", joint.get("name")) for joint in device.get("joints", [])}
+        if not isinstance(positions, dict) or set(positions) != expected:
+            raise ValueError(f"Absolute joint target must contain exactly {sorted(expected)}")
+        results = self.command(Action(ActionSpec("joint_position", device_id, dimension=len(expected)),
+                                      {"positions": positions}))
+        if len(results) != 1:
+            raise RuntimeError("Single-device joint move must produce exactly one backend result")
+        return results[0]
+
+    def command(self, command: Command | Action):
+        if not isinstance(command, Action):
+            raise TypeError("Public Robot.command accepts Action only; raw Command is backend-internal")
+        if isinstance(command, Action):
+            if not self.manifest.supports(command.spec.type, command.spec.target):
+                raise ValueError(f"Action {command.spec.type!r} is not advertised for {command.spec.target!r}")
+            supports = getattr(self.adapter, "supports_action", None)
+            if supports is not None and not supports(command.spec.type, command.spec.target):
+                raise ValueError(f"Action {command.spec.type!r} has no active binding for {command.spec.target!r}")
+            device = self.manifest.device(command.spec.target)
+            if command.spec.type == "joint_position" and device is not None:
+                values = asdict(command.values) if is_dataclass(command.values) else command.values
+                positions = values.get("positions") if isinstance(values, dict) else None
+                if isinstance(positions, dict):
+                    expected = {joint.get("canonical_name", joint.get("name"))
+                                for joint in device.get("joints", [])}
+                    if set(positions) != expected:
+                        raise ValueError(f"Joint target must contain exactly {sorted(expected)}")
+            state = self.state()
+            SafetyGuard().validate(
+                command,
+                state,
+                self.manifest,
+                control_enabled=getattr(self.adapter, "control_enabled", True),
+                dry_run=getattr(self.adapter, "dry_run", False),
+            )
+            mapped = ActionMapper().map(command, self.manifest)
+            return [self.adapter.send_command(item) for item in mapped]
 
     def close(self) -> None:
         self.adapter.disconnect()

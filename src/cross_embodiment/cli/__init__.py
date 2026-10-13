@@ -250,6 +250,9 @@ def _host(project_path: Path, *, robot_name: str | None, control_enabled: bool, 
         robot = connect(adapter, manifest, control_enabled=control_enabled, dry_run=False,
                         connection=connection, manage_process=manage_process)
         robot.lifecycle.connect()
+        wait_ready = getattr(robot.adapter, "wait_ready", None)
+        if wait_ready is not None and not wait_ready(float(connection.get("startup_timeout_sec", 15.0))):
+            raise PackageError("Mapped backend has no fresh ready state or Action server")
         _write_json_atomic(active, {"pid": os.getpid(), "robot": name, "package": package.name, "version": package.version})
         _write_json_atomic(ready, {"pid": os.getpid(), "started_at": time.time()})
         while not stopping.wait(0.5):

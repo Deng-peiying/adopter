@@ -1,0 +1,18 @@
+schema_version: embodiment/v0.2
+embodiment: {id: mock.reversed_arm, type: arm}
+devices:
+  - id: right_arm
+    type: arm
+    joints:
+      - {name: v_joint_g, canonical_name: arm.right.joint.6, type: revolute, unit: radian, limits: [-1.3, 1.3]}
+      - {name: v_joint_f, canonical_name: arm.right.joint.5, type: revolute, unit: radian, limits: [-1.3, 1.3]}
+      - {name: v_joint_e, canonical_name: arm.right.joint.4, type: revolute, unit: radian, limits: [-1.3, 1.3]}
+      - {name: v_joint_d, canonical_name: arm.right.joint.3, type: revolute, unit: radian, limits: [-1.3, 1.3]}
+      - {name: v_joint_c, canonical_name: arm.right.joint.2, type: revolute, unit: radian, limits: [-1.3, 1.3]}
+      - {name: v_joint_b, canonical_name: arm.right.joint.1, type: revolute, unit: radian, limits: [-1.3, 1.3]}
+      - {name: v_joint_a, canonical_name: arm.right.joint.0, type: revolute, unit: radian, limits: [-1.3, 1.3]}
+    capabilities: [joint_state, joint_position]
+control:
+  supported_modes:
+    - {type: joint_position, target: right_arm, dimension: 7, unit: radian}
+safety: {requires_enable: true, max_state_age_ms: 1000}

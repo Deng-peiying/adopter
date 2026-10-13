@@ -123,15 +123,18 @@ def _version_key(version: str) -> tuple[int, ...]:
 def _directory_digest(root: Path) -> str:
     digest = hashlib.sha256()
     ignored = {".git", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache"}
-    entries = list(root.rglob("*"))
+    def included(path: Path) -> bool:
+        relative = path.relative_to(root)
+        root_build_output = relative.parts[0] in {"build", "install", "log", "logs"}
+        return not (any(part in ignored for part in relative.parts)
+                    or root_build_output or path.suffix == ".pyc")
+
+    entries = [path for path in root.rglob("*") if included(path)]
     symlinks = [item for item in entries if item.is_symlink()]
     if symlinks:
         raise PackageError(f"Package artifact cannot contain symlinks: {symlinks[0]}")
     for path in sorted(item for item in entries if item.is_file()):
         relative = path.relative_to(root)
-        root_build_output = len(relative.parts) == 1 and relative.parts[0] in {"build", "install", "log", "logs"}
-        if any(part in ignored for part in relative.parts) or root_build_output or path.suffix == ".pyc":
-            continue
         digest.update(relative.as_posix().encode("utf-8"))
         digest.update(b"\0")
         digest.update(stat.S_IMODE(path.stat().st_mode).to_bytes(2, "big"))

@@ -68,7 +68,10 @@ class MockAdapter:
         else:
             raise CommandRejected(f"Mock adapter does not implement {command.mode}")
         self.commands.append(command)
-        return CommandResult(True, "accepted", self._sequence)
+        return CommandResult(
+            True, "applied by mock adapter; no physical robot involved", self._sequence,
+            status="simulated", dispatched=False,
+        )
 
     def health(self) -> HealthReport:
         return HealthReport(self._connected, "ready" if self._connected else "disconnected")
