@@ -100,8 +100,15 @@ class JointGoalPlanner:
             raise PackageError(
                 f"IK target frame must be {self.chain.base_link}, received {target_pose.frame}"
             )
-        if position_tolerance_m <= 0 or orientation_tolerance_rad <= 0:
-            raise PackageError("Position and orientation tolerance values must be positive")
+        if (
+            not math.isfinite(position_tolerance_m)
+            or not math.isfinite(orientation_tolerance_rad)
+            or position_tolerance_m <= 0
+            or orientation_tolerance_rad <= 0
+        ):
+            raise PackageError(
+                "Position and orientation tolerance values must be finite and positive"
+            )
 
         ik_result = solve_inverse_kinematics(self.chain, target_pose, source.positions)
         if not ik_result.success:

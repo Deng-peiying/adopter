@@ -186,6 +186,17 @@ def _pose_to_frame(kdl: Any, pose: Pose):
     return kdl.Frame(kdl.Rotation.Quaternion(x, y, z, w), kdl.Vector(*pose.position))
 
 
+def _validate_pose(pose: Pose) -> None:
+    if len(pose.position) != 3 or len(pose.quaternion_xyzw) != 4:
+        raise PackageError("Pose requires three position and four quaternion values")
+    values = tuple(pose.position) + tuple(pose.quaternion_xyzw)
+    if not all(math.isfinite(value) for value in values):
+        raise PackageError("Pose values must be finite")
+    quaternion_norm = math.sqrt(sum(value * value for value in pose.quaternion_xyzw))
+    if not math.isclose(quaternion_norm, 1.0, rel_tol=1e-6, abs_tol=1e-6):
+        raise PackageError("Pose quaternion must have unit length")
+
+
 def _frame_to_pose(frame: Any, reference_frame: str) -> Pose:
     x, y, z, w = frame.M.GetQuaternion()
     return Pose(
@@ -223,6 +234,7 @@ def solve_inverse_kinematics(
     max_iterations: int = 200,
     tolerance: float = 1e-8,
 ) -> IKResult:
+    _validate_pose(target)
     if target.frame != chain.base_link:
         raise PackageError(
             f"IK target frame must be {chain.base_link}, received {target.frame}"

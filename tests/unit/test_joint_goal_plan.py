@@ -1,3 +1,4 @@
+import math
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -107,6 +108,28 @@ class JointGoalPlanTests(unittest.TestCase):
                 state(),
                 unreachable,
                 position_tolerance_m=0.002,
+                orientation_tolerance_rad=0.02,
+            )
+
+    def test_plan_rejects_non_finite_pose_tolerance_and_invalid_quaternion(self):
+        invalid_targets = (
+            Pose((math.nan, 0.0, 0.0), frame="7axis_base_link"),
+            Pose((0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 0.0), "7axis_base_link"),
+            Pose((0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 2.0), "7axis_base_link"),
+        )
+        for target in invalid_targets:
+            with self.assertRaises(PackageError):
+                self.planner.plan(
+                    state(),
+                    target,
+                    position_tolerance_m=0.002,
+                    orientation_tolerance_rad=0.02,
+                )
+        with self.assertRaises(PackageError):
+            self.planner.plan(
+                state(),
+                self.current_pose,
+                position_tolerance_m=math.inf,
                 orientation_tolerance_rad=0.02,
             )
 
