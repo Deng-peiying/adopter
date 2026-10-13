@@ -85,7 +85,7 @@ v1 的语义动作词汇如下：
 
 SDK 已提供 `Robot.capabilities()`、`state()`、`get_joint_state()`、`move_joints()` 和 `command(Action)`。`move_joints()` 要求精确提供设备的全部规范关节名称，并返回一个 `CommandResult`；为保持兼容性，`command(Action)` 仍返回列表结果。公共接口 `Robot.command(Command)` 会拒绝原始后端命令，`Runtime` 现在也使用经过检查的 `Action` 路径。下发前会检查关节边界、数值有限性以及新鲜的启用状态。此前任意设置的单步关节位置上限已被移除。加载本体清单时会合并包级安全值。
 
-可选的 `ros2_mapped` Runtime 位于 SDK Core 之外。其首个 Hardware Package 绑定仅覆盖右臂：新鲜的 `ArmState` 关节位置、`ArmMove` 绝对 `MoveJ` 目标、Action 拒绝/失败/超时，以及终态后的实测到位状态。它只公开已映射的右臂动作和状态。`CommandResult.dispatched` 将“已尝试发送”与“Action 目标已接受”分别记录；Action 超时会保留物理结果未知这一事实。第二个模拟厂商包使用相反的原始关节顺序和以度为单位的字段，并在离线测试中通过了相同的公共 Robot 调用。
+可选的 `ros2_mapped` Runtime 组合厂商中立的 Mapping Engine 与 ROS2 Transport。其首个 Hardware Package 绑定仅覆盖右臂：新鲜的 `ArmState` 关节位置、`ArmMove` 绝对 `MoveJ` 目标、Action 拒绝/失败/超时，以及终态后的实测到位状态。它只公开已映射的右臂动作和状态。`CommandResult.dispatched` 将“已尝试发送”与“Action 目标已接受”分别记录；Action 超时会保留物理结果未知这一事实。本阶段没有实现第二厂商、Python Transport 或 Native Transport。
 
 2026-10-12 的主机侧验收通过映射后的 SDK Runtime 执行了 `Robot.get_joint_state("right_arm")` 和 `Robot.move_joints("right_arm", complete_target)`。系统读取到新鲜的 Idle (104)、无故障七关节状态；规范关节 6 的 `+0.10` rad 目标返回了 Action 状态 4/代码 0，终态后的实测误差为 `0.000147` rad。第二次公共 API 调用返回已记录的起始目标，最大误差为 `0.000145` rad。
 

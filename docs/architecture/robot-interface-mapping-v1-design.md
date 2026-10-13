@@ -7,7 +7,7 @@
 
 稳定的公共接口由 `Robot`、`Device`、`Action`、`RobotState`、`Capabilities` 和 `CommandResult` 构成。`move_joints`、`stop_motion` 等功能名称，是构建在类型化 Action 之上的易用 SDK/LLM 工具；它们既不是 ROS 端点名称，也不是第二套机器人控制协议。公共 Schema 中不得出现厂商名称、消息包、CAN 端口或关节数组顺序。
 
-每个 Hardware Package 都要为其具体设备提供接口映射和证据。可复用执行器负责实现所支持的 ROS 2 Topic、Service 和 Action 机制。只有当映射 Schema 无法表达某个厂商的传输方式或控制生命周期时，才需要协议插件。厂商原始驱动仍作为外部依赖存在。可复用的 `MappedRos2Adapter` 读取 Hardware Package 绑定；厂商端点名称、消息字段和关节顺序不会出现在 SDK Core 或 Demo 代码中。如果未来某个厂商的生命周期无法由映射 Schema 表达，仍可使用协议插件。
+每个 Hardware Package 都要为其具体设备提供接口映射和证据。纯 Mapping Engine 负责校验绑定、排序与单位转换、命令编译和结果解码；Backend Transport 只执行端点通信。当前 `MappedRos2Adapter` 作为薄运行时组合这两部分。只有当映射 Schema 无法表达某个厂商的传输方式或控制生命周期时，才需要协议插件。厂商原始驱动仍作为外部依赖存在；厂商端点名称、消息字段和关节顺序不会出现在 Robot API 或 Demo 代码中。
 
 ## 公共操作
 
@@ -25,6 +25,13 @@
 只有具备已验证绑定的能力，才可以提供给应用或 LLM。接口构件只能证明存在潜在的绑定，并不能证明该能力已经启用。`stop_motion` 绝不等同于硬件急停。
 
 ## 绑定 Schema
+
+`interface-mapping/v1` 将每条绑定明确分为四类：
+
+- `semantic`：规范操作、设备、规范关节顺序和单位；
+- `transport`：Backend 类型、调用种类、端点、接口类型和动作超时；
+- `encode` / `decode`：规范载荷和厂商字段之间的明确转换；
+- `result` / `completion`：厂商结果码、说明字段以及实测到位判据。
 
 一条绑定记录需标识：规范操作和设备；传输方式（`ros2_topic`、`ros2_service`、`ros2_action` 或已注册插件）；准确的端点和消息类型；请求字段映射；明确的关节顺序、单位和坐标系；前置条件和控制模式；结果与反馈字段；超时/取消行为；证据引用；以及验证阶段。字段转换使用规模较小的类型化注册表，包括恒等转换、具名顺序映射、经过标定的标量转换和经过验证的坐标系转换。映射文件不得包含任意 Python 表达式。
 
@@ -57,9 +64,9 @@
 
 1. 在 SDK 中固定公共操作 Schema 和结果词汇；移除原始 `Command` 的安全绕过路径，并按设备管理状态新鲜度。
 2. 定义并验证映射 Schema；加载器应拒绝未知转换、缺失字段、不支持的模式以及相互矛盾的能力声明。
-3. 实现可复用的 ROS 2 Action/Service/Topic 执行器和假服务器测试。厂商特定兼容路径的映射替代方案通过公共 API 验收路径后，移除这些兼容路径。
+3. 实现可复用的 ROS 2 Action/Topic Transport 和离线生命周期测试。厂商特定兼容路径的映射替代方案通过公共 API 验收路径后，移除这些兼容路径。
 4. 在 Hardware Package 中表示由证据支持的右臂绑定；继续禁用尚未确认的位姿、停止和灵巧手能力。在声明在线右臂控制能力之前，验证一次受限的物理操作。
-5. 添加第二个模拟厂商映射。只替换包/绑定数据时，相同的 SDK 客户端和 LLM 工具调用必须仍能工作。
+5. 在接入真实的第二种通信机制时，依据已稳定的 `BackendTransport` 协议实现相应 Transport，并继续保持 Robot API 与 Mapping Engine 不变。
 6. 将任务流程连接到类型化 Robot 客户端，然后添加 LLM 工具；这些工具的 Schema 暴露同一组经过能力过滤的操作。
 
-截至 2026-10-13 的实现状态：公共右臂 `get_joint_state()` 和 `move_joints()` 调用、可复用的 ROS 2 状态/Action 传输、Hardware Package 映射以及第二个模拟厂商映射均已存在。主机侧 SDK 路径通过了读取、探测和返回目标测试。随后，Demo 通过相同的公共调用完成了完整的下降/抬升/挥动/下降任务。Hardware Package 中旧有的厂商特定 Adapter 已被移除，映射 Runtime 成为唯一的在线控制后端。左臂、灵巧手、服务、笛卡尔操作和 LLM 工具调用仍未验证或尚未实现。详细的源码审计记录位于 Hardware Package 的 `docs/weiyi-interface-matrix.md`。
+截至 2026-10-13 的实现状态：公共右臂 `get_joint_state()` 和 `move_joints()`、纯 Mapping Engine、通用 Backend Transport Protocol、ROS2 Transport 以及 Hardware Package 映射均已存在。主机侧 SDK 路径通过了读取、探测和返回目标测试。随后，Demo 通过相同的公共调用完成了完整的下降/抬升/挥动/下降任务。Hardware Package 中旧有的厂商特定 Adapter 已被移除，薄 `MappedRos2Adapter` 是唯一在线控制入口。左臂、灵巧手、ROS2 Service、笛卡尔操作、Python/Native Transport 和 LLM 工具仍未验证或尚未实现。详细的源码审计记录位于 Hardware Package 的 `docs/weiyi-interface-matrix.md`。

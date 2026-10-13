@@ -9,10 +9,12 @@ src/cross_embodiment/
 ├── sdk/          # Robot API 与生命周期
 ├── runtime/      # Policy 执行、安全和动作映射
 ├── protocol/     # Action、Observation、Policy 协议
+├── mapping/      # Hardware Package 映射校验、编译与解码
+├── backend/      # 与 ROS/Python/Native 无关的传输协议
 ├── hardware/     # Embodiment Manifest、Robot Instance
 ├── package/      # Package Manifest、Registry、Resolver、Lock
 ├── adapter/      # Adapter Contract 与通用 Mock
-├── driver/       # Backend 加载、健康状态、进程托管
+├── driver/       # ROS2 Transport、Backend 加载、健康状态、进程托管
 └── cli/          # ce 命令实现
 cli/              # 源码检出时的轻量命令入口
 schemas/          # Hardware、Embodiment、Instance、Policy、Project Schema
@@ -61,6 +63,6 @@ python3.10 tasks/wave_goodbye.py --cycles 2 --amplitude-rad 0.30 --send
 
 Native 路径需要 ROS 2 Humble、主机依赖、正确配置的 CAN 接口及对应权限。硬件二进制包尚无确认的再分发许可，因此当前仅保留在本地 Hardware Package。
 
-2026-10-13 已通过 `wy-dual-o6-demo/tasks/wave_goodbye.py` 完成右臂真机链路验证：Demo 只调用 `Robot.get_joint_state()` 和 `Robot.move_joints()`，可复用的 `MappedRos2Adapter` 根据 Hardware Package 的 YAML 映射到 `ArmState` / `ArmMove`，并把 Action 结果及实测到位状态转换回 SDK 类型。该验证覆盖右臂关节状态和绝对关节位置，不代表左臂、灵巧手、笛卡尔、停止或使能接口已经映射。
+2026-10-13 已通过 `wy-dual-o6-demo/tasks/wave_goodbye.py` 完成右臂真机链路验证：Demo 只调用 `Robot.get_joint_state()` 和 `Robot.move_joints()`；`MappedRos2Adapter` 组合纯 Mapping Engine 与 ROS2 Transport，根据 Hardware Package 的 YAML 编译 `TransportRequest`，再把 Action 结果和实测状态恢复为 SDK 类型。该验证覆盖右臂关节状态和绝对关节位置，不代表左臂、灵巧手、笛卡尔、停止或使能接口已经映射。
 
 架构和实施计划位于 `docs/`；`outputs/` 仅用于可重新生成的输出文件。JSON Schema 已按契约分类，但当前 loader 尚未执行 JSON Schema 校验。
