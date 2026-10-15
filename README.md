@@ -95,3 +95,9 @@ Native 路径需要 ROS 2 Humble、主机依赖、正确配置的 CAN 接口及�
 当前自动生成范围仅为 Weiyi 右臂 `joint_position_state` 和
 `joint_position`，当前 Backend 只支持 ROS2 subscription/action。L1/L2 不发送
 动作；L3 必须显式加载新生成目录，并由现场操作者确认后执行。
+
+2026-10-16 已完成新生成 Package 的 Gate E / L3 真机验收：只读预检读取到
+`arm_mode: 104`、`fault_code: 0` 和真实七关节状态；现场授权后，探测与返回
+两个 `Robot.move_joints()` 均获得 ROS Action 成功终态和实测到位确认。完整证据
+保存在 `onboarding-evidence/weiyi-right-arm-20261015-gate-e/`。该结论只覆盖
+Weiyi 右臂的 ROS2 `joint_position_state` 与 `joint_position`。

@@ -56,8 +56,10 @@ runtime mapping sha256:f9bbd83f1c7de63869a912f0cf2bea08a140b0d5de14bc7b5eec4f569
 runtime package sha256:ab9eeeba9e81aed0ae295da003372300e05f3fd4efeda84dddf9fbfad94befaf
 ```
 
-Real motion remains pending successful read-only preflight and explicit onsite
-authorization.
+Gate E / L3 passed on 2026-10-16 after successful read-only preflight and
+explicit onsite authorization. The sealed evidence is under
+`onboarding-evidence/weiyi-right-arm-20261015-gate-e/`; the commands below are
+retained as the reproducible procedure.
 
 ## Terminal 1: start the vendor runtime
 
@@ -176,8 +178,8 @@ python3.10 -m cross_embodiment.cli onboard accept-l3 \
 ```
 
 The command performs another read-only preflight and prints the exact package,
-mapping, backend, current state, and full probe target. Anything other than the
-exact terminal response `EXECUTE L3` cancels with no motion command.
+mapping, backend, current state, and full probe target. After trimming terminal
+whitespace, anything other than `EXECUTE L3` cancels with no motion command.
 
 After authorization it performs exactly:
 
@@ -207,3 +209,25 @@ record and classify the result:
 
 Do not publish, certify, merge, or push the generated package based on L1/L2
 alone. A successful Weiyi L3 validates this ROS2 case only.
+
+## Recorded Gate E result
+
+The 2026-10-16 onsite run loaded package tree
+`b917fd226eec6771605034ffe0f518df33fadb805c1aeec1b9ae2b12ef1161e2`
+and mapping
+`f9bbd83f1c7de63869a912f0cf2bea08a140b0d5de14bc7b5eec4f569a3a7b17`.
+The read-only preflight reported mode `104`, fault code `0`, and a fresh
+seven-joint state.
+
+The authorized round trip produced:
+
+| Operation | Result | Backend status | Vendor code | Arrival | Maximum error |
+| --- | --- | ---: | ---: | --- | ---: |
+| probe | succeeded | 4 | 0 | confirmed | 0.000203252424 rad |
+| return | succeeded | 4 | 0 | confirmed | 0.000142851961 rad |
+
+Both measured state timestamps were newer than the pre-dispatch sample. The
+adapter did not supply an optional `CommandResult.command_id`, so the evidence
+preserves it as `null` and does not invent an identifier. The authoritative
+records are `e4-live-preflight.json`, `e5-l3-execution.json`, and
+`gate-e-acceptance-report.json` in the Gate E evidence directory.
