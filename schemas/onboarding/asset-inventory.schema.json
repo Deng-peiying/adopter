@@ -53,6 +53,31 @@
           }
         }
       }
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "relative_path", "detail"],
+        "properties": {
+          "code": {"type": "string"},
+          "relative_path": {"type": "string"},
+          "detail": {"type": "string"}
+        }
+      }
+    },
+    "duplicate_digests": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sha256", "relative_paths"],
+        "properties": {
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "relative_paths": {"type": "array", "items": {"type": "string"}}
+        }
+      }
     }
   }
 }
