@@ -9,6 +9,7 @@ import yaml
 
 from .backend_fit import BackendFit, BackendFitReport, load_backend_descriptor
 from .capability import CapabilityCoverage, CapabilityMatcher, OnboardingScope
+from .candidate_builder import DeterministicCandidateBuilder
 from .catalog import load_capability_catalog
 from .conformance import ConformanceReport, ConformanceRunner
 from .evidence import EvidenceMatrix
@@ -117,6 +118,9 @@ def _load_coverage(path: Path) -> CapabilityCoverage:
             IntegrationStage(**stage),
             tuple(MissingRequirement(**entry) for entry in item.get("missing", [])),
             tuple(item.get("conflicts", [])),
+            bool(item.get("candidate_valid", False)),
+            bool(item.get("mapping_complete", False)),
+            bool(item.get("execution_policy_complete", False)),
         ))
     candidates = tuple(CapabilityCandidate(
         item["capability_id"], tuple(item["evidence_ids"]), item["proposed_semantics"]
@@ -165,9 +169,32 @@ class OnboardingWorkflow:
             _load_evidence(self.run_root / "interface-evidence.yaml"),
         )
 
+    def deterministic_candidates(self) -> tuple[CapabilityCandidate, ...]:
+        path = self.run_root / "deterministic-candidates.yaml"
+        return _load_candidates(path) if path.is_file() else ()
+
     def assess(self, scope_path: Path, candidates_path: Path) -> CapabilityCoverage:
         scope_data = yaml.safe_load(scope_path.read_text(encoding="utf-8"))
         candidates = _load_candidates(candidates_path)
+        return self.assess_candidates(scope_data, candidates)
+
+    def derive_candidates(self, scope_path: Path) -> CapabilityCoverage:
+        scope_data = yaml.safe_load(scope_path.read_text(encoding="utf-8"))
+        catalog = load_capability_catalog(
+            self.platform_root / "catalogs/capabilities/v0.1.yaml"
+        )
+        candidates = DeterministicCandidateBuilder().build(
+            catalog,
+            self.evidence_matrix(),
+            device_id=str(scope_data["device_id"]),
+            capability_ids=tuple(scope_data["capability_ids"]),
+            ordered_joints=tuple(scope_data["ordered_joints"]),
+        )
+        _write_yaml(self.run_root / "deterministic-candidates.yaml", {
+            "schema_version": "capability-candidates/v0.1",
+            "source": "deterministic_normalized_evidence",
+            "candidates": [_plain(item) for item in candidates],
+        })
         return self.assess_candidates(scope_data, candidates)
 
     def assess_candidates(
@@ -196,6 +223,30 @@ class OnboardingWorkflow:
         identity = PackageIdentity(**yaml.safe_load(identity_path.read_text(encoding="utf-8")))
         return PackageGenerator.generate(coverage, self.evidence_matrix(), fit, self.run_root / "hardware-package", identity)
 
+    def generate_candidate(self, identity_path: Path) -> GeneratedPackage:
+        coverage = _load_coverage(self.run_root / "capability-coverage.yaml")
+        if any(item.conflicts for item in coverage.assessments):
+            raise SemanticConflict("capability coverage contains semantic conflicts")
+        if any(not item.mapping_complete for item in coverage.assessments):
+            raise AssetInsufficiency("required interface mapping evidence is incomplete")
+        descriptor = load_backend_descriptor(
+            self.platform_root / "catalogs/backends/ros2_mapped_v0.1.yaml"
+        )
+        fit = BackendFit.evaluate(coverage, (descriptor,))
+        _write_yaml(self.run_root / "backend-fit.yaml", _plain(fit))
+        if fit.plugin_requirements:
+            raise BackendGap("current backend cannot express every required interface")
+        identity = PackageIdentity(**yaml.safe_load(
+            identity_path.read_text(encoding="utf-8")
+        ))
+        return PackageGenerator.generate_candidate(
+            coverage,
+            self.evidence_matrix(),
+            fit,
+            self.run_root / "hardware-package-candidate",
+            identity,
+        )
+
     def validate(self) -> ConformanceReport:
         report = ConformanceRunner().validate_generated_package(self.run_root / "hardware-package")
         payload = {
@@ -207,12 +258,44 @@ class OnboardingWorkflow:
         (self.run_root / "conformance-report.json").write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
         return report
 
+    def validate_candidate(self) -> ConformanceReport:
+        report = ConformanceRunner().validate_candidate_package(
+            self.run_root / "hardware-package-candidate"
+        )
+        payload = {
+            "passed": report.passed,
+            "checks": list(report.checks),
+            "failures": list(report.failures),
+            "resolved_package_root": str(report.resolved_package_root),
+            "resolved_mapping_path": (
+                str(report.resolved_mapping_path)
+                if report.resolved_mapping_path else None
+            ),
+            "candidate_only": True,
+            "live_execution_ready": False,
+            "motion_sent": False,
+        }
+        (self.run_root / "candidate-conformance-report.json").write_text(
+            json.dumps(payload, indent=2, sort_keys=True) + "\n"
+        )
+        return report
+
     def report(self) -> dict[str, Any]:
         conformance = self.run_root / "conformance-report.json"
         validation = json.loads(conformance.read_text()) if conformance.is_file() else None
+        candidate_conformance = self.run_root / "candidate-conformance-report.json"
+        candidate_validation = (
+            json.loads(candidate_conformance.read_text())
+            if candidate_conformance.is_file() else None
+        )
         return {
             "run_root": str(self.run_root),
             "l1": "completed" if (self.run_root / "interface-evidence.yaml").is_file() else "not_started",
             "l2": "passed" if validation and validation.get("passed") else ("failed" if validation else "not_started"),
+            "l2_candidate": (
+                "passed" if candidate_validation and candidate_validation.get("passed")
+                else ("failed" if candidate_validation else "not_started")
+            ),
+            "live_execution_ready": bool(validation and validation.get("passed")),
             "motion_sent": False,
         }

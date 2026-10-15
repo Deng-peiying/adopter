@@ -28,7 +28,34 @@ def _fields(text: str) -> list[dict[str, str]]:
     return result
 
 
-def _record(path: Path, root: Path, root_id: str, claim_type: str, claims: dict[str, Any], boundary: str, level: EvidenceLevel = EvidenceLevel.DECLARED) -> EvidenceRecord:
+def _field_lines(text: str, section: int = 0) -> dict[str, int]:
+    result: dict[str, int] = {}
+    current_section = 0
+    for number, raw in enumerate(text.splitlines(), 1):
+        if raw.strip() == "---":
+            current_section += 1
+            continue
+        if current_section != section:
+            continue
+        line = raw.split("#", 1)[0].strip()
+        if not line or "=" in line:
+            continue
+        parts = line.split()
+        if len(parts) >= 2:
+            result[parts[1]] = number
+    return result
+
+
+def _record(
+    path: Path,
+    root: Path,
+    root_id: str,
+    claim_type: str,
+    claims: dict[str, Any],
+    boundary: str,
+    level: EvidenceLevel = EvidenceLevel.DECLARED,
+    claim_sources: dict[str, dict[str, Any]] | None = None,
+) -> EvidenceRecord:
     relative = path.relative_to(root)
     digest = sha256(path.read_bytes()).hexdigest()
     claim_digest = sha256(json.dumps(claims, sort_keys=True).encode()).hexdigest()[:12]
@@ -38,7 +65,11 @@ def _record(path: Path, root: Path, root_id: str, claim_type: str, claims: dict[
         source_path=relative,
         claim_type=claim_type,
         claims=claims,
-        provenance={"extractor": "ros2-static", "source_sha256": digest},
+        provenance={
+            "extractor": "ros2-static",
+            "source_sha256": digest,
+            **({"claim_sources": claim_sources} if claim_sources else {}),
+        },
         confidence_boundary=boundary,
         level=level,
     )
@@ -99,6 +130,24 @@ def _attribute_path(node: ast.AST) -> str | None:
     return ".".join(reversed(parts))
 
 
+def _resolved_attribute_path(node: ast.AST, aliases: dict[str, str]) -> str | None:
+    value = _attribute_path(node)
+    if value is None:
+        return None
+    parts = value.split(".")
+    if parts[0] in aliases:
+        return ".".join([*aliases[parts[0]].split("."), *parts[1:]])
+    return value
+
+
+def _source(relative: Path, line: int, rule: str) -> dict[str, Any]:
+    return {
+        "source_path": relative.as_posix(),
+        "line": line,
+        "normalization_rule": rule,
+    }
+
+
 def _function_defaults(node: ast.FunctionDef | ast.AsyncFunctionDef) -> dict[str, Any]:
     names = [item.arg for item in node.args.args]
     values: dict[str, Any] = {}
@@ -108,6 +157,105 @@ def _function_defaults(node: ast.FunctionDef | ast.AsyncFunctionDef) -> dict[str
         except ValueError:
             pass
     return values
+
+
+def _message_observations(scope: ast.AST) -> tuple[
+    set[str], dict[str, int], dict[str, int], dict[str, int]
+]:
+    """Return message fields tied to parameters within one lexical scope."""
+    parameter_names = {
+        argument.arg
+        for function in ast.walk(scope)
+        if isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef))
+        for argument in function.args.args
+        if argument.arg not in {"self", "cls"}
+    }
+    aliases: dict[str, str] = {}
+    changed = True
+    while changed:
+        changed = False
+        for node in ast.walk(scope):
+            if not isinstance(node, (ast.Assign, ast.AnnAssign)) or node.value is None:
+                continue
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            value = _resolved_attribute_path(node.value, aliases)
+            if value is None or value.split(".")[0] not in parameter_names:
+                continue
+            for target in targets:
+                if isinstance(target, ast.Name) and aliases.get(target.id) != value:
+                    aliases[target.id] = value
+                    changed = True
+
+    observed_fields: set[str] = set()
+    observed_field_lines: dict[str, int] = {}
+    fault_code_fields: dict[str, int] = {}
+    fault_type_fields: dict[str, int] = {}
+    for node in ast.walk(scope):
+        if isinstance(node, ast.Attribute):
+            path_value = _resolved_attribute_path(node, aliases)
+            if path_value and path_value.split(".")[0] in parameter_names:
+                field = ".".join(path_value.split(".")[1:])
+                if field:
+                    observed_fields.add(field)
+                    observed_field_lines.setdefault(field, node.lineno)
+        elif (
+            isinstance(node, ast.Compare)
+            and len(node.ops) == 1
+            and len(node.comparators) == 1
+        ):
+            attribute = _resolved_attribute_path(node.left, aliases)
+            try:
+                compared = _literal(node.comparators[0], {})
+            except ValueError:
+                continue
+            if attribute and compared == 0 and attribute.split(".")[0] in parameter_names:
+                field = ".".join(attribute.split(".")[1:])
+                if field.endswith("fault_code"):
+                    fault_code_fields[field] = node.lineno
+                elif field.endswith("fault_type.value"):
+                    fault_type_fields[field] = node.lineno
+    return (
+        observed_fields,
+        observed_field_lines,
+        fault_code_fields,
+        fault_type_fields,
+    )
+
+
+def _subscription_callback_name(node: ast.AST) -> str | None:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    if isinstance(node, ast.Lambda) and isinstance(node.body, ast.Call):
+        return _call_name(node.body.func) or None
+    return None
+
+
+def _action_result_observation(
+    scope: ast.AST, constants: dict[str, Any],
+) -> tuple[str, int, int] | None:
+    observations: set[tuple[str, int, int]] = set()
+    for node in ast.walk(scope):
+        if not (
+            isinstance(node, ast.Compare)
+            and len(node.ops) == 1
+            and isinstance(node.ops[0], ast.Eq)
+            and len(node.comparators) == 1
+        ):
+            continue
+        attribute = _attribute_path(node.left)
+        try:
+            compared = _literal(node.comparators[0], constants)
+        except ValueError:
+            continue
+        if attribute and "error" in attribute and isinstance(compared, int):
+            parts = attribute.split(".")
+            field = ".".join(parts[-2:]) if len(parts) >= 2 else parts[-1]
+            observations.add((field, compared, node.lineno))
+    if len(observations) == 1:
+        return next(iter(observations))
+    return None
 
 
 def _interface_package(path: Path, root: Path) -> str | None:
@@ -166,16 +314,17 @@ def _python_ros_usage(path: Path, root: Path, root_id: str) -> list[EvidenceReco
                 for alias in node.names:
                     imported_types[alias.asname or alias.name] = f"{'/'.join(parts)}/{alias.name}"
 
-    observed_fields: set[str] = set()
+    relative = path.relative_to(root)
+    (
+        observed_fields,
+        observed_field_lines,
+        fault_code_fields,
+        fault_type_fields,
+    ) = _message_observations(tree)
     ready_values: set[int] = set()
-    result_code_field: str | None = None
-    success_code: int | None = None
+    ready_value_lines: dict[int, int] = {}
     for node in ast.walk(tree):
-        if isinstance(node, ast.Attribute):
-            path_value = _attribute_path(node)
-            if path_value and path_value.startswith("msg."):
-                observed_fields.add(path_value[4:])
-        elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+        if isinstance(node, (ast.Assign, ast.AnnAssign)):
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
             value = node.value
             if value is not None:
@@ -186,18 +335,41 @@ def _python_ros_usage(path: Path, root: Path, root_id: str) -> list[EvidenceReco
                 for target in targets:
                     if isinstance(target, ast.Name) and "idle" in target.id.lower() and isinstance(resolved, int):
                         ready_values.add(resolved)
-        elif isinstance(node, ast.Compare) and len(node.ops) == 1 and isinstance(node.ops[0], ast.Eq) and len(node.comparators) == 1:
-            attribute = _attribute_path(node.left)
-            try:
-                compared = _literal(node.comparators[0], constants)
-            except ValueError:
-                continue
-            if attribute and "error" in attribute and isinstance(compared, int):
-                parts = attribute.split(".")
-                result_code_field = ".".join(parts[-2:]) if len(parts) >= 2 else parts[-1]
-                success_code = compared
+                        ready_value_lines.setdefault(resolved, node.lineno)
+    function_observations: dict[
+        tuple[str | None, str],
+        tuple[set[str], dict[str, int], dict[str, int], dict[str, int]],
+    ] = {}
+    call_owners: dict[int, str | None] = {}
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            function_observations[(None, node.name)] = _message_observations(node)
+            for child in ast.walk(node):
+                if isinstance(child, ast.Call):
+                    call_owners[id(child)] = None
+        elif isinstance(node, ast.ClassDef):
+            for function in node.body:
+                if not isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                function_observations[(node.name, function.name)] = (
+                    _message_observations(function)
+                )
+                for child in ast.walk(function):
+                    if isinstance(child, ast.Call):
+                        call_owners[id(child)] = node.name
+    subscription_interfaces = {
+        call.args[0].id
+        for call in ast.walk(tree)
+        if isinstance(call, ast.Call)
+        and _call_name(call.func) == "create_subscription"
+        and len(call.args) >= 3
+        and isinstance(call.args[0], ast.Name)
+    }
+    allow_file_wide_subscription_facts = len(subscription_interfaces) == 1
 
-    action_details: dict[str, dict[str, Any]] = {}
+    action_detail_candidates: dict[
+        str, list[tuple[dict[str, Any], dict[str, dict[str, Any]]]]
+    ] = {}
     arrival: dict[str, Any] | None = None
     for function in (item for item in ast.walk(tree) if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))):
         defaults = _function_defaults(function)
@@ -206,23 +378,101 @@ def _python_ros_usage(path: Path, root: Path, root_id: str) -> list[EvidenceReco
                 "arrival_tolerance_rad": defaults["tol"],
                 "settle_window_s": defaults["settle"],
                 "completion": ["terminal_result", "measured_arrival"],
+                "execution_policy_status": "unconfirmed",
+                "execution_policy_origin": "application_helper_default",
+                "arrival_metric": "unverified_application_comparison",
+                "settle_semantics": "unverified_application_behavior",
             }
-        for call in (item for item in ast.walk(function) if isinstance(item, ast.Call)):
+        goal_calls = [
+            item for item in ast.walk(function)
+            if isinstance(item, ast.Call)
+            and isinstance(item.func, ast.Attribute)
+            and item.func.attr == "Goal"
+            and isinstance(item.func.value, ast.Name)
+        ]
+        goal_interfaces = {call.func.value.id for call in goal_calls}
+        result_observation = (
+            _action_result_observation(function, constants)
+            if len(goal_interfaces) == 1 else None
+        )
+        for call in goal_calls:
             if isinstance(call.func, ast.Attribute) and call.func.attr == "Goal" and isinstance(call.func.value, ast.Name):
                 interface_name = call.func.value.id
                 details: dict[str, Any] = {"constants": {}, "dynamic_goal_fields": []}
+                detail_sources: dict[str, dict[str, Any]] = {}
                 for keyword in call.keywords:
                     if keyword.arg is None:
                         continue
                     try:
                         details["constants"][keyword.arg] = _literal(keyword.value, constants)
+                        detail_sources["constants"] = _source(
+                            relative, keyword.value.lineno,
+                            "literal action Goal keyword",
+                        )
                     except ValueError:
                         details["dynamic_goal_fields"].append(keyword.arg)
+                        detail_sources["dynamic_goal_fields"] = _source(
+                            relative, keyword.value.lineno,
+                            "non-literal action Goal keyword",
+                        )
                 if len(details["dynamic_goal_fields"]) == 1:
                     details["target_field"] = details["dynamic_goal_fields"][0]
+                    detail_sources["target_field"] = detail_sources["dynamic_goal_fields"]
                 if "timeout" in defaults:
                     details["timeout_s"] = defaults["timeout"]
-                action_details[interface_name] = details
+                    details["execution_policy_status"] = "unconfirmed"
+                    details["execution_policy_origin"] = "python_function_default"
+                    detail_sources["timeout_s"] = _source(
+                        relative, function.lineno,
+                        "Python function default; execution policy remains unconfirmed",
+                    )
+                if result_observation is not None:
+                    result_field, result_code, result_line = result_observation
+                    details["result_code_field"] = result_field
+                    details["success_code"] = result_code
+                    detail_sources["result_code_field"] = _source(
+                        relative, result_line,
+                        "action result field compared with integer success code",
+                    )
+                    detail_sources["success_code"] = detail_sources["result_code_field"]
+                action_detail_candidates.setdefault(interface_name, []).append(
+                    (details, detail_sources)
+                )
+
+    action_details: dict[str, dict[str, Any]] = {}
+    action_detail_sources: dict[str, dict[str, dict[str, Any]]] = {}
+    for interface_name, candidates in action_detail_candidates.items():
+        merged: dict[str, Any] = {}
+        merged_sources: dict[str, dict[str, Any]] = {}
+        ordinary_keys = set.intersection(*(
+            set(details) for details, _ in candidates
+        )) - {"result_code_field", "success_code"}
+        for key in ordinary_keys:
+            values = {
+                json.dumps(details[key], sort_keys=True)
+                for details, _ in candidates
+            }
+            if len(values) == 1:
+                merged[key] = candidates[0][0][key]
+                if key in candidates[0][1]:
+                    merged_sources[key] = candidates[0][1][key]
+        result_pairs = {
+            (details.get("result_code_field"), details.get("success_code"))
+            for details, _ in candidates
+            if "result_code_field" in details and "success_code" in details
+        }
+        if len(result_pairs) == 1 and all(
+            "result_code_field" in details and "success_code" in details
+            for details, _ in candidates
+        ):
+            result_field, success = next(iter(result_pairs))
+            merged["result_code_field"] = result_field
+            merged["success_code"] = success
+            for key in ("result_code_field", "success_code"):
+                if key in candidates[0][1]:
+                    merged_sources[key] = candidates[0][1][key]
+        action_details[interface_name] = merged
+        action_detail_sources[interface_name] = merged_sources
 
     records: list[EvidenceRecord] = []
     for call in (item for item in ast.walk(tree) if isinstance(item, ast.Call)):
@@ -241,23 +491,125 @@ def _python_ros_usage(path: Path, root: Path, root_id: str) -> list[EvidenceReco
         if not interface_type or not isinstance(endpoint, str):
             continue
         if name == "create_subscription":
-            claims: dict[str, Any] = {"transport_kind": "ros2_subscription", "endpoint": endpoint, "interface_type": interface_type}
-            positions = sorted(field for field in observed_fields if "joint" in field and ("angle" in field or "position" in field))
-            modes = sorted(field for field in observed_fields if "mode" in field)
+            callback_name = _subscription_callback_name(call.args[2])
+            callback_observation = function_observations.get(
+                (call_owners.get(id(call)), callback_name or "")
+            )
+            if callback_observation and callback_observation[0]:
+                (
+                    subscription_fields,
+                    subscription_field_lines,
+                    subscription_fault_codes,
+                    subscription_fault_types,
+                ) = callback_observation
+            elif allow_file_wide_subscription_facts:
+                subscription_fields = observed_fields
+                subscription_field_lines = observed_field_lines
+                subscription_fault_codes = fault_code_fields
+                subscription_fault_types = fault_type_fields
+            else:
+                subscription_fields = set()
+                subscription_field_lines = {}
+                subscription_fault_codes = {}
+                subscription_fault_types = {}
+            claims: dict[str, Any] = {
+                "transport_operation": "subscribe",
+                "transport_kind": "ros2_subscription",
+                "endpoint": endpoint,
+                "interface_type": interface_type,
+            }
+            sources = {
+                "transport_operation": _source(
+                    relative, call.lineno,
+                    "rclpy.create_subscription -> subscribe",
+                ),
+                "transport_kind": _source(
+                    relative, call.lineno,
+                    "rclpy.create_subscription -> ros2_subscription",
+                ),
+                "endpoint": _source(
+                    relative, call.lineno,
+                    "statically resolve create_subscription endpoint argument",
+                ),
+                "interface_type": _source(
+                    relative, call.lineno,
+                    "resolve imported create_subscription message type",
+                ),
+            }
+            positions = sorted(
+                field for field in subscription_fields
+                if "joint" in field and ("angle" in field or "position" in field)
+            )
+            modes = sorted(field for field in subscription_fields if "mode" in field)
             if len(positions) == 1:
                 claims["positions_field"] = positions[0]
+                sources["positions_field"] = _source(
+                    relative, subscription_field_lines[positions[0]],
+                    "message field consumed as measured joint positions",
+                )
             if len(modes) == 1:
                 claims["mode_field"] = modes[0]
-            if ready_values:
+                sources["mode_field"] = _source(
+                    relative, subscription_field_lines[modes[0]],
+                    "message field consumed as arm mode",
+                )
+            if ready_values and allow_file_wide_subscription_facts:
                 claims["ready_values"] = sorted(ready_values)
-            records.append(_record(path, root, root_id, "ros2_subscription_usage", claims, "static_python_usage_only"))
+                sources["ready_values"] = _source(
+                    relative, min(ready_value_lines.values()),
+                    "integer constant named as idle mode",
+                )
+            if len(subscription_fault_codes) == 1:
+                field, line = next(iter(subscription_fault_codes.items()))
+                claims["fault_code_field"] = field
+                sources["fault_code_field"] = _source(
+                    relative, line,
+                    "message field compared with zero as numeric fault code",
+                )
+            if len(subscription_fault_types) == 1:
+                field, line = next(iter(subscription_fault_types.items()))
+                claims["fault_type_field"] = field
+                sources["fault_type_field"] = _source(
+                    relative, line,
+                    "message field compared with zero as fault category",
+                )
+            records.append(_record(
+                path, root, root_id, "ros2_subscription_usage", claims,
+                "static_python_usage_only", claim_sources=sources,
+            ))
         else:
             details = action_details.get(interface_name, {})
-            claims = {"transport_kind": "ros2_action", "endpoint": endpoint, "interface_type": interface_type, **details}
-            if result_code_field is not None:
-                claims["result_code_field"] = result_code_field
-                claims["success_code"] = success_code
-            records.append(_record(path, root, root_id, "ros2_action_usage", claims, "static_python_usage_only"))
+            detail_sources = action_detail_sources.get(interface_name, {})
+            claims = {
+                "transport_operation": "send_action_goal",
+                "transport_kind": "ros2_action",
+                "endpoint": endpoint,
+                "interface_type": interface_type,
+                **details,
+            }
+            sources = {
+                "transport_operation": _source(
+                    relative, call.lineno,
+                    "rclpy.action.ActionClient -> send_action_goal",
+                ),
+                "transport_kind": _source(
+                    relative, call.lineno,
+                    "rclpy.action.ActionClient -> ros2_action",
+                ),
+                "endpoint": _source(
+                    relative, call.lineno,
+                    "statically resolve ActionClient endpoint argument",
+                ),
+                "interface_type": _source(
+                    relative, call.lineno,
+                    "resolve imported ActionClient action type",
+                ),
+                **detail_sources,
+            }
+            records.append(_record(
+                path, root, root_id, "ros2_action_usage", claims,
+                "static_python_usage_only", claim_sources=sources,
+            ))
     if arrival:
         records.append(_record(path, root, root_id, "joint_arrival_policy", arrival, "static_python_policy_only"))
     return records
@@ -285,9 +637,32 @@ def _joint_configurations(path: Path, root: Path, root_id: str) -> list[Evidence
                         limits.append([float(raw_limit[0]), float(raw_limit[1])])
                     if limits:
                         claims: dict[str, Any] = {"device": str(device), "vendor_joint_order": order, "joint_limits": limits}
+                        joint_list_line = next(
+                            (index for index, raw in enumerate(text.splitlines(), 1) if "joint_list:" in raw),
+                            1,
+                        )
+                        sources = {
+                            "vendor_joint_order": _source(
+                                path.relative_to(root), joint_list_line,
+                                "ordered YAML joint_list",
+                            ),
+                            "joint_limits": _source(
+                                path.relative_to(root),
+                                next((index for index, raw in enumerate(text.splitlines(), 1) if "joint_soft_limit:" in raw), 1),
+                                "joint_soft_limit values ordered by joint_list",
+                            ),
+                        }
                         if "radian" in text:
                             claims["unit"] = "radian"
-                        records.append(_record(path, root, root_id, "robot_joint_configuration", claims, "static_parameter_configuration_only"))
+                            sources["unit"] = _source(
+                                path.relative_to(root),
+                                next((index for index, raw in enumerate(text.splitlines(), 1) if "radian" in raw), 1),
+                                "explicit radian marker in vendor configuration",
+                            )
+                        records.append(_record(
+                            path, root, root_id, "robot_joint_configuration", claims,
+                            "static_parameter_configuration_only", claim_sources=sources,
+                        ))
                 visit(config)
         elif isinstance(value, list):
             for item in value:
@@ -345,7 +720,32 @@ class Ros2Extractor:
                 package = _interface_package(path, root)
                 if package:
                     claims["qualified_interface"] = f"{package}/{suffix[1:]}/{path.stem}"
-                records.append(_record(path, root, context.root_id, "ros2_interface_definition", claims, "type_definition_only"))
+                path_sources: dict[str, dict[str, Any]] = {}
+                sections = text.split("---")
+                top_level_lines = _field_lines(text, section=0)
+                for claim_name in (
+                    "field_paths", "goal_field_paths", "request_field_paths",
+                ):
+                    for field_path in claims.get(claim_name, ()):
+                        top = field_path.split(".", 1)[0]
+                        path_sources[field_path] = _source(
+                            relative, top_level_lines.get(top, 1),
+                            "expand ROS interface field declaration",
+                        )
+                if suffix in {".srv", ".action"} and len(sections) > 1:
+                    result_lines = _field_lines(text, section=1)
+                    for claim_name in ("response_field_paths", "result_field_paths"):
+                        for field_path in claims.get(claim_name, ()):
+                            top = field_path.split(".", 1)[0]
+                            path_sources[field_path] = _source(
+                                relative, result_lines.get(top, 1),
+                                "expand ROS interface result field declaration",
+                            )
+                records.append(_record(
+                    path, root, context.root_id, "ros2_interface_definition", claims,
+                    "type_definition_only",
+                    claim_sources={"interface_paths": path_sources},
+                ))
             elif suffix == ".idl":
                 records.append(_record(path, root, context.root_id, "ros2_interface_definition", {
                     "interface": path.stem,

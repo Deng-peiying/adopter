@@ -60,3 +60,26 @@ def test_known_transport_with_unknown_operation_does_not_fit() -> None:
         coverage(candidate("stop", "ros2_action", "stop")), (descriptor,)
     )
     assert report.plugin_requirements[0].missing_mechanism == "operation:stop"
+
+
+def test_backend_fit_accepts_complete_interface_mapping_with_unresolved_runtime_policy() -> None:
+    descriptor = load_backend_descriptor(ROOT / "catalogs/backends/ros2_mapped_v0.1.yaml")
+    item = candidate("joint_position", "ros2_action", "joint_position")
+    partial = CapabilityCoverage((
+        CapabilityAssessment(
+            item.capability_id,
+            "unknown",
+            item.evidence_ids,
+            IntegrationStage(discovered=True),
+            candidate_valid=True,
+            mapping_complete=True,
+            execution_policy_complete=False,
+        ),
+    ), (item,), ())
+
+    report = BackendFit.evaluate(partial, (descriptor,))
+
+    assert [(fit.capability_id, fit.backend_id) for fit in report.fits] == [
+        ("joint_position", "ros2_mapped"),
+    ]
+    assert report.plugin_requirements == ()

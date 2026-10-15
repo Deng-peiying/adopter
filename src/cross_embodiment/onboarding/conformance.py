@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from hashlib import sha256
 import importlib
+from importlib.resources import files
+import json
 import math
 from pathlib import Path
 import threading
@@ -200,6 +202,117 @@ class ConformanceRunner:
         except Exception as exc:
             failures.append(f"runtime conformance: {exc}")
         return ConformanceReport(not failures, tuple(checks), tuple(failures), root, mapping_path)
+
+    def validate_candidate_package(self, package_root: Path) -> ConformanceReport:
+        """Validate interface evidence without treating the package as executable."""
+        root = package_root.resolve()
+        checks: list[str] = []
+        failures: list[str] = []
+        mapping_path: Path | None = None
+        try:
+            package = load_package_manifest(root / "package.yaml")
+            if package.root.resolve() != root:
+                raise ValueError("resolved package root selected another package")
+            if package.validation.get("candidate_only") is not True:
+                raise ValueError("package is not marked candidate_only")
+            if package.validation.get("live_execution_ready") is not False:
+                raise ValueError("candidate package must block live execution")
+            checks.append("package_schema")
+        except Exception as exc:
+            return ConformanceReport(
+                False, tuple(checks), (f"candidate package schema: {exc}",),
+                root, None,
+            )
+
+        try:
+            package.validate_assets(require_digests=True)
+            checks.append("asset_digests")
+        except Exception as exc:
+            failures.append(f"asset digest validation: {exc}")
+
+        try:
+            if "interface_mapping" in package.assets:
+                raise ValueError("candidate package exposes a runtime mapping asset")
+            mapping_path = package.resolve_asset_path(
+                "interface_mapping_candidate", "yaml"
+            ).resolve()
+            mapping = yaml.safe_load(mapping_path.read_text(encoding="utf-8"))
+            schema_resource = files("cross_embodiment.onboarding").joinpath(
+                "schemas/interface-mapping-candidate.schema.json"
+            )
+            schema = json.loads(schema_resource.read_text(encoding="utf-8"))
+            try:
+                import jsonschema  # type: ignore
+            except ImportError as exc:
+                raise RuntimeError(
+                    "candidate schema validation requires the onboarding extra: "
+                    "pip install 'cross-embodiment[onboarding]'"
+                ) from exc
+            jsonschema.validate(mapping, schema)
+            checks.append("candidate_mapping_schema")
+        except Exception as exc:
+            failures.append(f"candidate mapping schema: {exc}")
+            mapping = None
+
+        try:
+            if package.defaults:
+                raise ValueError("candidate package declares runtime defaults")
+            if any(
+                backend.entrypoint or backend.launch or backend.executable
+                for backend in package.backends
+            ):
+                raise ValueError("candidate package exposes an executable backend")
+            if (root / "config/connection.yaml").exists():
+                raise ValueError("candidate package contains a runtime connection")
+            checks.append("runtime_execution_blocked")
+        except Exception as exc:
+            failures.append(f"runtime execution isolation: {exc}")
+
+        if isinstance(mapping, dict):
+            try:
+                operations = {
+                    binding["semantic"]["operation"]: binding
+                    for binding in mapping["bindings"].values()
+                }
+                if set(operations) != {"joint_state", "joint_position"}:
+                    raise ValueError("candidate requires state and position bindings")
+                if not all(
+                    binding.get("interface_mapped") is True
+                    and binding.get("evidence")
+                    for binding in operations.values()
+                ):
+                    raise ValueError("interface mapping lacks evidence")
+                checks.append("interface_mapping_complete")
+                policy = operations["joint_position"].get("completion_policy")
+                if not isinstance(policy, dict) or policy.get("status") != "unresolved":
+                    raise ValueError("completion policy gap is not explicit")
+                if not policy.get("missing_fields"):
+                    raise ValueError("completion policy has no unresolved fields")
+                checks.append("execution_policy_gap_recorded")
+            except Exception as exc:
+                failures.append(f"candidate interface coverage: {exc}")
+
+        try:
+            provenance = yaml.safe_load(
+                (root / "generation-provenance.yaml").read_text(encoding="utf-8")
+            )
+            for item in provenance.get("evidence", []):
+                source = str(item.get("source_path", ""))
+                if (
+                    Path(source).is_absolute()
+                    or ".." in Path(source).parts
+                    or any(marker in source for marker in self.denied_markers)
+                ):
+                    raise ValueError(
+                        f"provenance contains denied reference: {source}"
+                    )
+            checks.append("provenance_isolation")
+        except Exception as exc:
+            failures.append(f"provenance isolation: {exc}")
+
+        return ConformanceReport(
+            not failures, tuple(checks), tuple(failures), root, mapping_path,
+        )
 
 
 def _semantic_mapping(root: Path) -> dict[str, Any]:

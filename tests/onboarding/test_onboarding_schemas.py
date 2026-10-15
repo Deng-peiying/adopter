@@ -102,6 +102,7 @@ def test_onboarding_json_schemas_exist_and_are_strict() -> None:
     for name in (
         "asset-inventory.schema.json",
         "interface-evidence.schema.json",
+        "evidence-contract.schema.json",
         "capability-coverage.schema.json",
         "backend-support.schema.json",
     ):

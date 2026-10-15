@@ -12,6 +12,8 @@ class Demo:
     def state_cb(self, msg):
         self.mode = msg.arm_mode
         self.joints = list(msg.joint_angles)
+        if msg.arm_fault.fault_code != 0:
+            raise RuntimeError("arm fault")
 
     def wait_joint_near(self, target, tol=0.03, timeout=5.0, settle=0.2):
         return True

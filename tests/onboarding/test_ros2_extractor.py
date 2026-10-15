@@ -70,14 +70,25 @@ def test_graph_snapshot_is_read_only_runtime_evidence(tmp_path: Path) -> None:
 def test_extracts_ros2_python_usage_without_importing_vendor_code() -> None:
     records = _evidence()
     state = next(item for item in records if item.claim_type == "ros2_subscription_usage")
-    assert state.claims == {
+    assert dict(state.claims) == {
+        "transport_operation": "subscribe",
         "transport_kind": "ros2_subscription",
         "endpoint": "/wy/right_arm_state",
         "interface_type": "demo_arm/msg/ArmState",
         "positions_field": "joint_angles",
         "mode_field": "arm_mode",
+        "fault_code_field": "arm_fault.fault_code",
     }
+    state_sources = state.provenance["claim_sources"]
+    assert state_sources["transport_operation"]["line"] == 10
+    assert state_sources["endpoint"]["source_path"] == "examples/right_arm.py"
+    assert state_sources["positions_field"]["line"] == 14
+    assert state_sources["fault_code_field"]["line"] == 15
+    assert state_sources["transport_operation"]["normalization_rule"] == (
+        "rclpy.create_subscription -> subscribe"
+    )
     move = next(item for item in records if item.claim_type == "ros2_action_usage")
+    assert move.claims["transport_operation"] == "send_action_goal"
     assert move.claims["endpoint"] == "/wy/right_arm_move_action"
     assert move.claims["interface_type"] == "demo_arm/action/ArmMove"
     assert move.claims["target_field"] == "joint_angles"
@@ -85,12 +96,151 @@ def test_extracts_ros2_python_usage_without_importing_vendor_code() -> None:
     assert move.claims["result_code_field"] == "error_code.value"
     assert move.claims["success_code"] == 0
     assert move.claims["timeout_s"] == 20.0
+    assert move.claims["execution_policy_status"] == "unconfirmed"
+    assert move.claims["execution_policy_origin"] == "python_function_default"
+    assert move.provenance["claim_sources"]["transport_operation"]["line"] == 9
     arrival = next(item for item in records if item.claim_type == "joint_arrival_policy")
     assert arrival.claims == {
         "arrival_tolerance_rad": 0.03,
         "settle_window_s": 0.2,
         "completion": ["terminal_result", "measured_arrival"],
+        "execution_policy_status": "unconfirmed",
+        "execution_policy_origin": "application_helper_default",
+        "arrival_metric": "unverified_application_comparison",
+        "settle_semantics": "unverified_application_behavior",
     }
+
+
+def test_subscription_fields_are_scoped_to_their_callback(tmp_path: Path) -> None:
+    source = tmp_path / "multi_subscription.py"
+    source.write_text(
+        "from demo.msg import ArmState, TemperatureState\n"
+        "class Node:\n"
+        "    def __init__(self):\n"
+        "        self.create_subscription(ArmState, '/arm/state', self.arm_cb, 10)\n"
+        "        self.create_subscription(TemperatureState, '/temp/state', self.temp_cb, 10)\n"
+        "    def arm_cb(self, msg):\n"
+        "        self.joints = msg.joint_angles\n"
+        "        self.mode = msg.arm_mode\n"
+        "    def temp_cb(self, sample):\n"
+        "        self.temperature = sample.temperature\n",
+        encoding="utf-8",
+    )
+
+    records = Ros2Extractor().scan_files(
+        ScanContext(tmp_path, "vendor", frozenset())
+    )
+    subscriptions = {
+        item.claims["endpoint"]: item
+        for item in records
+        if item.claim_type == "ros2_subscription_usage"
+    }
+
+    assert subscriptions["/arm/state"].claims["positions_field"] == "joint_angles"
+    assert subscriptions["/arm/state"].claims["mode_field"] == "arm_mode"
+    assert "positions_field" not in subscriptions["/temp/state"].claims
+    assert "mode_field" not in subscriptions["/temp/state"].claims
+
+
+def test_subscription_callbacks_with_same_name_are_scoped_to_owning_class(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "same_callback_name.py"
+    source.write_text(
+        "from demo.msg import ArmState, TemperatureState\n"
+        "class ArmNode:\n"
+        "    def __init__(self):\n"
+        "        self.create_subscription(ArmState, '/arm/state', self.callback, 10)\n"
+        "    def callback(self, msg):\n"
+        "        self.joints = msg.joint_angles\n"
+        "class TemperatureNode:\n"
+        "    def __init__(self):\n"
+        "        self.create_subscription(TemperatureState, '/temp/state', self.callback, 10)\n"
+        "    def callback(self, msg):\n"
+        "        self.temperature = msg.temperature\n",
+        encoding="utf-8",
+    )
+
+    records = Ros2Extractor().scan_files(
+        ScanContext(tmp_path, "vendor", frozenset())
+    )
+    subscriptions = {
+        item.claims["endpoint"]: item
+        for item in records
+        if item.claim_type == "ros2_subscription_usage"
+    }
+
+    assert subscriptions["/arm/state"].claims["positions_field"] == "joint_angles"
+    assert "positions_field" not in subscriptions["/temp/state"].claims
+
+
+def test_action_result_semantics_are_scoped_to_action_goal_function(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "multi_action.py"
+    source.write_text(
+        "from rclpy.action import ActionClient\n"
+        "from demo.action import ArmMove, GripperMove\n"
+        "class Node:\n"
+        "    def __init__(self):\n"
+        "        self.arm = ActionClient(self, ArmMove, '/arm/move')\n"
+        "        self.gripper = ActionClient(self, GripperMove, '/gripper/move')\n"
+        "    def move_arm(self, joints):\n"
+        "        goal = ArmMove.Goal(joint_angles=joints, move_type='MoveJ')\n"
+        "        if result.error_code.value == 0:\n"
+        "            return goal\n"
+        "    def move_gripper(self, width):\n"
+        "        goal = GripperMove.Goal(width=width)\n"
+        "        if result.error_code.value == 7:\n"
+        "            return goal\n",
+        encoding="utf-8",
+    )
+
+    actions = {
+        item.claims["endpoint"]: item
+        for item in Ros2Extractor().scan_files(
+            ScanContext(tmp_path, "vendor", frozenset())
+        )
+        if item.claim_type == "ros2_action_usage"
+    }
+
+    assert actions["/arm/move"].claims["success_code"] == 0
+    assert actions["/arm/move"].claims["target_field"] == "joint_angles"
+    assert actions["/gripper/move"].claims["success_code"] == 7
+    assert actions["/gripper/move"].claims["target_field"] == "width"
+
+
+def test_conflicting_result_semantics_for_same_action_type_are_not_selected(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "same_action_multiple_functions.py"
+    source.write_text(
+        "from rclpy.action import ActionClient\n"
+        "from demo.action import ArmMove\n"
+        "class Node:\n"
+        "    def __init__(self):\n"
+        "        self.arm = ActionClient(self, ArmMove, '/arm/move')\n"
+        "    def first(self, joints):\n"
+        "        goal = ArmMove.Goal(joint_angles=joints, move_type='MoveJ')\n"
+        "        if result.error_code.value == 0:\n"
+        "            return goal\n"
+        "    def second(self, joints):\n"
+        "        goal = ArmMove.Goal(joint_angles=joints, move_type='MoveJ')\n"
+        "        if result.error_code.value == 7:\n"
+        "            return goal\n",
+        encoding="utf-8",
+    )
+
+    action = next(
+        item for item in Ros2Extractor().scan_files(
+            ScanContext(tmp_path, "vendor", frozenset())
+        )
+        if item.claim_type == "ros2_action_usage"
+    )
+
+    assert action.claims["target_field"] == "joint_angles"
+    assert "result_code_field" not in action.claims
+    assert "success_code" not in action.claims
 
 
 def test_extracts_nested_interface_paths_and_joint_configuration() -> None:
@@ -100,6 +250,9 @@ def test_extracts_nested_interface_paths_and_joint_configuration() -> None:
     assert "arm_fault.fault_code" in state.claims["field_paths"]
     move = next(item for item in records if item.claims.get("interface") == "ArmMove")
     assert "error_code.value" in move.claims["result_field_paths"]
+    result_sources = move.provenance["claim_sources"]["interface_paths"]
+    assert result_sources["error_code.value"]["line"] == 4
+    assert result_sources["error_description"]["line"] == 5
     config = next(item for item in records if item.claim_type == "robot_joint_configuration")
     assert config.claims == {
         "device": "right_arm",

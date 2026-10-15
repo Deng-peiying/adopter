@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cross-embodiment.dev/schemas/onboarding/evidence-contract.schema.json",
+  "title": "Onboarding evidence contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "capabilities"],
+  "properties": {
+    "schema_version": {"const": "evidence-contract/v0.1"},
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field",
+            "fact",
+            "evidence_claims",
+            "evidence_types",
+            "structural_claims",
+            "source",
+            "normalization_rule",
+            "reject_unconfirmed_policy",
+            "platform_value",
+            "normalization_inputs"
+          ],
+          "properties": {
+            "field": {"type": "string"},
+            "fact": {"type": "string"},
+            "evidence_claims": {"type": "array", "items": {"type": "string"}},
+            "evidence_types": {"type": "array", "items": {"type": "string"}},
+            "structural_claims": {"type": "array", "items": {"type": "string"}},
+            "source": {
+              "enum": [
+                "vendor_evidence",
+                "platform_catalog+vendor_evidence",
+                "onboarding_scope",
+                "adapter_runtime"
+              ]
+            },
+            "normalization_rule": {"type": ["string", "null"]},
+            "reject_unconfirmed_policy": {"type": "boolean"},
+            "platform_value": {},
+            "normalization_inputs": {"type": "array", "items": {"type": "string"}}
+          }
+        }
+      }
+    }
+  }
+}

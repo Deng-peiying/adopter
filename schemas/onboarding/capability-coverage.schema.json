@@ -6,7 +6,9 @@
   "additionalProperties": false,
   "required": [
     "schema_version",
-    "assessments"
+    "assessments",
+    "candidates",
+    "discovered_unmapped_evidence_ids"
   ],
   "properties": {
     "schema_version": {
@@ -23,7 +25,10 @@
           "evidence_ids",
           "stages",
           "missing",
-          "conflicts"
+          "conflicts",
+          "candidate_valid",
+          "mapping_complete",
+          "execution_policy_complete"
         ],
         "properties": {
           "capability_id": {
@@ -90,9 +95,35 @@
             "items": {
               "type": "string"
             }
+          },
+          "candidate_valid": {
+            "type": "boolean"
+          },
+          "mapping_complete": {
+            "type": "boolean"
+          },
+          "execution_policy_complete": {
+            "type": "boolean"
           }
         }
       }
+    },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["capability_id", "evidence_ids", "proposed_semantics"],
+        "properties": {
+          "capability_id": {"type": "string"},
+          "evidence_ids": {"type": "array", "items": {"type": "string"}},
+          "proposed_semantics": {"type": "object"}
+        }
+      }
+    },
+    "discovered_unmapped_evidence_ids": {
+      "type": "array",
+      "items": {"type": "string"}
     }
   }
 }

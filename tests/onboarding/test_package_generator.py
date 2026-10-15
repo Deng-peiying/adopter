@@ -14,7 +14,10 @@ from cross_embodiment.onboarding.capability import CapabilityCoverage
 from cross_embodiment.onboarding.generator import PackageGenerator, PackageIdentity
 from cross_embodiment.onboarding.evidence import EvidenceMatrix
 from cross_embodiment.onboarding.inventory import AssetInventory
-from cross_embodiment.onboarding.models import CapabilityAssessment, CapabilityCandidate, EvidenceLevel, EvidenceRecord, IntegrationStage
+from cross_embodiment.onboarding.models import (
+    CapabilityAssessment, CapabilityCandidate, EvidenceLevel, EvidenceRecord,
+    IntegrationStage, MissingRequirement,
+)
 
 
 JOINTS = tuple(f"arm.right.joint.{i}" for i in range(7))
@@ -44,8 +47,19 @@ def inputs(conflict: bool = False):
         CapabilityCandidate("joint_position", ("move-evidence",), move_semantics),
     )
     assessments = (
-        CapabilityAssessment("joint_position_state", "native", ("state-evidence",), IntegrationStage(discovered=True), conflicts=("unit",) if conflict else ()),
-        CapabilityAssessment("joint_position", "native", ("move-evidence",), IntegrationStage(discovered=True)),
+        CapabilityAssessment(
+            "joint_position_state", "native", ("state-evidence",),
+            IntegrationStage(discovered=True),
+            conflicts=("unit",) if conflict else (),
+            candidate_valid=True, mapping_complete=True,
+            execution_policy_complete=True,
+        ),
+        CapabilityAssessment(
+            "joint_position", "native", ("move-evidence",),
+            IntegrationStage(discovered=True),
+            candidate_valid=True, mapping_complete=True,
+            execution_policy_complete=True,
+        ),
     )
     coverage = CapabilityCoverage(assessments, candidates, ("unmapped-left-arm",))
     backend = BackendFitReport((
@@ -65,6 +79,43 @@ def inputs(conflict: bool = False):
     ) for identifier in ("state-evidence", "move-evidence", "unmapped-left-arm"))
     evidence = EvidenceMatrix.build(AssetInventory((), (), ()), records)
     return coverage, evidence, backend, identity
+
+
+def partial_policy_inputs():
+    coverage, evidence, backend, identity = inputs()
+    move = coverage.candidates[1]
+    policy_fields = {
+        "timeout_s", "arrival_tolerance_rad", "settle_window_s",
+    }
+    partial_move = CapabilityCandidate(
+        move.capability_id,
+        move.evidence_ids,
+        {
+            key: value for key, value in move.proposed_semantics.items()
+            if key not in policy_fields
+        },
+    )
+    partial_assessment = replace(
+        coverage.assessments[1],
+        status="unknown",
+        missing=tuple(
+            MissingRequirement(field, "runtime completion policy unresolved")
+            for field in sorted(policy_fields)
+        ),
+        candidate_valid=True,
+        mapping_complete=True,
+        execution_policy_complete=False,
+    )
+    return (
+        CapabilityCoverage(
+            (coverage.assessments[0], partial_assessment),
+            (coverage.candidates[0], partial_move),
+            coverage.discovered_unmapped_evidence_ids,
+        ),
+        evidence,
+        backend,
+        identity,
+    )
 
 
 def test_generates_runtime_compatible_scoped_package(tmp_path: Path) -> None:
@@ -110,3 +161,85 @@ def test_refuses_conflicts_or_unknown_required_capabilities(tmp_path: Path) -> N
     bad = CapabilityCoverage((replace(coverage.assessments[0], status="unknown"), coverage.assessments[1]), coverage.candidates, ())
     with pytest.raises(ValueError, match="not native"):
         PackageGenerator.generate(bad, evidence, backend, tmp_path / "unknown", identity)
+
+
+def test_generates_non_executable_candidate_package_when_only_policy_is_unresolved(
+    tmp_path: Path,
+) -> None:
+    partial, evidence, backend, identity = partial_policy_inputs()
+    policy_fields = {
+        "timeout_s", "arrival_tolerance_rad", "settle_window_s",
+    }
+
+    generated = PackageGenerator.generate_candidate(
+        partial, evidence, backend, tmp_path / "candidate", identity,
+    )
+    package = load_package_manifest(generated.package_yaml)
+    candidate = yaml.safe_load(generated.mapping_yaml.read_text())
+
+    assert generated.package_status == "candidate"
+    assert package.validation["candidate_only"] is True
+    assert package.validation["live_execution_ready"] is False
+    assert package.defaults == {}
+    assert package.backends[0].entrypoint is None
+    assert "interface_mapping" not in package.assets
+    assert "interface_mapping_candidate" in package.assets
+    assert candidate["schema_version"] == "interface-mapping-candidate/v0.1"
+    move_binding = candidate["bindings"]["right_arm_joint_position"]
+    assert move_binding["interface_mapped"] is True
+    assert move_binding["completion_policy"]["status"] == "unresolved"
+    assert set(move_binding["completion_policy"]["missing_fields"]) == policy_fields
+    assert "timeout_s" not in move_binding["transport"]
+    assert not (generated.root / "config/connection.yaml").exists()
+
+
+def test_candidate_mapping_filename_is_derived_from_device_identity(
+    tmp_path: Path,
+) -> None:
+    partial, evidence, backend, identity = partial_policy_inputs()
+    generic_identity = replace(identity, device_id="primary_arm")
+    move = partial.candidates[1]
+    generic_move = replace(
+        move,
+        proposed_semantics={
+            **move.proposed_semantics,
+            "state_binding": "primary_arm_joint_state",
+        },
+    )
+    generic_partial = CapabilityCoverage(
+        partial.assessments,
+        (partial.candidates[0], generic_move),
+        partial.discovered_unmapped_evidence_ids,
+    )
+
+    generated = PackageGenerator.generate_candidate(
+        generic_partial, evidence, backend, tmp_path / "candidate", generic_identity,
+    )
+    package = load_package_manifest(generated.package_yaml)
+
+    assert generated.mapping_yaml.name == "primary_arm_ros2_mapping.candidate.yaml"
+    assert package.assets["interface_mapping_candidate"][0].path == (
+        "config/primary_arm_ros2_mapping.candidate.yaml"
+    )
+
+
+def test_generation_rejects_package_identity_device_relabeling(
+    tmp_path: Path,
+) -> None:
+    partial, evidence, backend, identity = partial_policy_inputs()
+    mismatched = replace(identity, device_id="primary_arm")
+
+    with pytest.raises(ValueError, match="identity device"):
+        PackageGenerator.generate_candidate(
+            partial, evidence, backend, tmp_path / "candidate", mismatched,
+        )
+
+    complete, evidence, backend, identity = inputs()
+    with pytest.raises(ValueError, match="identity device"):
+        PackageGenerator.generate(
+            complete,
+            evidence,
+            backend,
+            tmp_path / "runtime",
+            replace(identity, device_id="primary_arm"),
+        )

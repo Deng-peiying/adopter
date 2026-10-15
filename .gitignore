@@ -25,3 +25,4 @@ outputs/*
 .DS_Store
 .vscode/
 .ce/runtime/
+.deepseek_credentials.py

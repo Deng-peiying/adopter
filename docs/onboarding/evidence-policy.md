@@ -1,5 +1,4 @@
 # Hardware Onboarding 证据策略
-
 Onboarding 只根据可追溯资产生成 Capability 结论。统一接口补全是把已存在且证据
 充分的厂商能力绑定到固定语义，不是推测或发明硬件能力。
 
@@ -120,3 +119,39 @@ DeepSeek 可以选择证据、提出语义候选和判断缺口。它不能：
 L1 通过表示资产识别完成；L2 通过表示新包离线契约成立；L3 通过只表示该包在
 指定硬件、Runtime 和测试目标上完成真机闭环。单个 Weiyi ROS2 案例不能证明
 Python、C/C++、CAN/TCP、串口或其他机器人已经通用化。
+
+# Evidence Contract
+
+The versioned shared contract is defined by
+`schemas/onboarding/evidence-contract.schema.json` and implemented by
+`src/cross_embodiment/onboarding/evidence_contract.py`. Candidate fields,
+required facts, allowed evidence types, deterministic normalization rules, and
+platform-owned values are defined there once. The ROS2 scanner emits the claim
+names and field provenance described by that contract; the matcher queries the
+same contract; the onboarding Agent receives its structured export.
+
+Transport vocabulary and SDK semantics remain distinct. For example, a
+`ros2_subscription_usage` record proves the transport operation `subscribe`.
+When the Capability Catalog has one canonical operation for
+`joint_position_state`, the deterministic contract can normalize that evidence
+to `joint_state`. It does not permit an unobserved operation such as `publish`.
+
+## Candidate Hardware Package
+
+Vendor interface mapping and Runtime Completion Policy have separate states.
+The deterministic builder may establish `mapping_complete: true` while
+`timeout_s`, `arrival_tolerance_rad`, and `settle_window_s` remain unresolved.
+Those values are caller/runtime policy unless a vendor declaration, explicit
+operator configuration, or validated test policy supplies them.
+
+`ce onboard generate-candidate` therefore creates an auditable, non-executable
+package when both interfaces are mapped but completion policy remains open.
+The candidate has no runtime mapping asset, connection file, backend
+entrypoint, or runtime defaults. `ce onboard validate-candidate` checks its
+schema, evidence, policy gaps, digests, and isolation, while keeping
+`live_execution_ready: false`.
+
+DeepSeek reviews deterministic candidates, cites supporting Evidence IDs, and
+records semantic decisions or gaps. It is not required to transcribe facts
+that the Scanner has already normalized without ambiguity. Ambiguous or
+conflicting facts still require an Agent decision or remain unresolved.

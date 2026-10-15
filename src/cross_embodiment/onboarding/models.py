@@ -119,6 +119,9 @@ class CapabilityAssessment:
     stages: IntegrationStage
     missing: tuple[MissingRequirement, ...] = ()
     conflicts: tuple[str, ...] = ()
+    candidate_valid: bool = False
+    mapping_complete: bool = False
+    execution_policy_complete: bool = False
 
     def __post_init__(self) -> None:
         if self.status not in {"native", "derived", "unsupported", "unknown"}:

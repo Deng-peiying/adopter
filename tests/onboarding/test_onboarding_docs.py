@@ -21,6 +21,7 @@ def test_onboarding_documentation_links_and_contract_paths_exist() -> None:
         "catalogs/backends/ros2_mapped_v0.1.yaml",
         "schemas/onboarding/asset-inventory.schema.json",
         "schemas/onboarding/interface-evidence.schema.json",
+        "schemas/onboarding/evidence-contract.schema.json",
         "schemas/onboarding/capability-coverage.schema.json",
         "schemas/onboarding/backend-support.schema.json",
         "schemas/mapping/interface-mapping-v1.schema.json",

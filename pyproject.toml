@@ -14,10 +14,14 @@ dependencies = ["PyYAML>=6.0"]
 # core SDK dependency. This extra documents the optional URDF tooling used by
 # broader robot models while the verified MVP chain uses its fixed URDF subset.
 kinematics = ["urdf-parser-py>=0.0.4"]
-onboarding-agent = ["openai>=1.0"]
+onboarding = ["jsonschema>=4.0"]
+onboarding-agent = ["openai>=1.0", "jsonschema>=4.0"]
 
 [project.scripts]
 ce = "cross_embodiment.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"cross_embodiment.onboarding" = ["schemas/*.json"]

@@ -20,8 +20,10 @@ Hardware Onboarding 将厂商原始资产转换为可由固定 Unified Robot SDK
 - `catalogs/backends/ros2_mapped_v0.1.yaml`
 - `schemas/onboarding/asset-inventory.schema.json`
 - `schemas/onboarding/interface-evidence.schema.json`
+- `schemas/onboarding/evidence-contract.schema.json`
 - `schemas/onboarding/capability-coverage.schema.json`
 - `schemas/onboarding/backend-support.schema.json`
+- `schemas/onboarding/interface-mapping-candidate.schema.json`
 - `schemas/mapping/interface-mapping-v1.schema.json`
 
 ## 职责边界
@@ -30,7 +32,7 @@ Hardware Onboarding 将厂商原始资产转换为可由固定 Unified Robot SDK
 | --- | --- |
 | Unified Robot SDK | 稳定的 Robot API、Action、State、CommandResult 与公共校验 |
 | Onboarding Scanner | 静态识别 ROS2、Python、ELF/头文件、URDF/Mesh 和运行环境证据 |
-| DeepSeek Onboarding Agent | 查询证据、提出 Capability 候选、判断缺口和选择可表达的映射 |
+| DeepSeek Onboarding Agent | 审查确定性候选及证据、处理歧义、判断 Capability 与缺口 |
 | Deterministic Matcher | 验证候选语义是否由引用的证据支持，拒绝缺字段或冲突 |
 | Generator | 只根据已通过的 Coverage 和 Backend Fit 生成结构化文件 |
 | Conformance Runner | 校验 Schema、编码/解码、错误、超时和实测到位语义 |
@@ -38,9 +40,11 @@ Hardware Onboarding 将厂商原始资产转换为可由固定 Unified Robot SDK
 | Backend Transport | 执行通信机制；当前实现为 ROS2 subscription/action |
 
 DeepSeek 没有 Shell、任意读文件、任意写文件、运动执行或验证等级提升工具。
-它每轮只能返回一个允许的类型化调用：`list_evidence`、`get_evidence`、
-`submit_candidate`、`assess`、`backend_fit`、`generate` 或 `validate`。
-因此它负责语义推理，而扫描、校验、生成和测试仍由确定性代码执行。
+一轮可以返回零个、一个或多个原生 Tool Call；Runtime 会处理完整批次并保持
+call ID 与结果关联。允许的工具是 `list_evidence`、`get_evidence`、
+`accept_deterministic_candidate`、`submit_candidate`、`record_conclusion` 和
+`assess`。因此它负责语义判断，而扫描、字段装配、校验、生成和测试仍由确定性
+代码执行。
 
 ## 隔离要求
 
@@ -57,8 +61,8 @@ DeepSeek 没有 Shell、任意读文件、任意写文件、运动执行或验�
 
 ## 确定性 L1/L2 命令
 
-以下命令不调用 LLM，也不发送机器人动作。候选文件必须由人工评审或受限 Agent
-根据 `interface-evidence.yaml` 生成；不能填写无法追溯的端点或字段。
+以下命令不调用 LLM，也不发送机器人动作。Scanner 已唯一解析的字段由确定性
+Builder 从 `interface-evidence.yaml` 装配；冲突或缺失字段不会被猜测。
 
 ```bash
 cd ~/文档/for_robot_dpy/.worktrees/body-aware-robot-agent-mvp/cross-embody-sdk
@@ -93,22 +97,20 @@ ordered_joints:
   - arm.right.joint.6
 ```
 
-评审后的 `candidates.yaml` 使用 `CapabilityCandidate` 结构：每项包含
-`capability_id`、`evidence_ids` 和 `proposed_semantics`。随后执行：
+创建 `package-identity.yaml` 后执行：
 
 ```bash
-python3.10 -m cross_embodiment.cli onboard assess \
+python3.10 -m cross_embodiment.cli onboard derive-candidates \
   --run-root "$RUN_ROOT" \
   --scope "$RUN_ROOT/scope.yaml" \
-  --candidates "$RUN_ROOT/candidates.yaml" \
   --json
 
-python3.10 -m cross_embodiment.cli onboard generate \
+python3.10 -m cross_embodiment.cli onboard generate-candidate \
   --run-root "$RUN_ROOT" \
   --identity "$RUN_ROOT/package-identity.yaml" \
   --json
 
-python3.10 -m cross_embodiment.cli onboard validate \
+python3.10 -m cross_embodiment.cli onboard validate-candidate \
   --run-root "$RUN_ROOT" \
   --json
 
@@ -116,6 +118,11 @@ python3.10 -m cross_embodiment.cli onboard report \
   --run-root "$RUN_ROOT" \
   --json
 ```
+
+当所有 Runtime Completion Policy 具有明确来源并通过 Matcher 后，才使用
+`generate` 与 `validate` 生成可运行包。策略仍未解决时，候选包没有 runtime
+mapping、连接文件或可执行 Backend，且固定标记
+`live_execution_ready: false`。
 
 `package-identity.yaml` 只定义包身份、设备和 Backend，例如：
 
@@ -138,43 +145,54 @@ arch: x86_64
 
 ## DeepSeek 编排
 
-安装可选依赖并通过环境变量提供密钥；密钥不写入仓库、日志或 Agent 上下文：
+安装可选依赖。Provider 优先读取环境变量，也可以自动读取仓库根目录下、被
+`.gitignore` 排除的 `.deepseek_credentials.py`：
 
 ```bash
 python3.10 -m pip install -e '.[onboarding-agent]'
-read -rsp 'DeepSeek API Key: ' DEEPSEEK_API_KEY; echo
-export DEEPSEEK_API_KEY
+cat > .deepseek_credentials.py <<'PY'
+DEEPSEEK_API_KEY = "replace-with-local-key"
+PY
+chmod 600 .deepseek_credentials.py
 ```
 
-确定性 `inspect` 完成后，调用程序构造 `DeepSeekProvider`、
-`OnboardingGoal` 与同一个 `OnboardingWorkflow`：
+凭据文件只允许一个字面量 `DEEPSEEK_API_KEY` 赋值；Provider 用 AST 读取该
+赋值，不执行文件内容。密钥不会写入 Provider transcript 或 Agent 上下文。
 
-```python
-from pathlib import Path
-from cross_embodiment.onboarding.agent import OnboardingAgent, OnboardingGoal
-from cross_embodiment.onboarding.providers import DeepSeekProvider
-from cross_embodiment.onboarding.workflow import OnboardingWorkflow
+确定性 `inspect` 和 `derive-candidates` 完成后，只使用正式 CLI：
 
-run_root = Path("/tmp/ce-onboarding/weiyi-right-arm-new")
-workflow = OnboardingWorkflow(run_root, Path.cwd())
-goal = OnboardingGoal(
-    device_id="right_arm",
-    capability_ids=("joint_position_state", "joint_position"),
-    ordered_joints=tuple(f"arm.right.joint.{index}" for index in range(7)),
-    identity_path=run_root / "package-identity.yaml",
-)
-result = OnboardingAgent(DeepSeekProvider(model="deepseek-chat")).run(goal, workflow)
-print(result)
+```bash
+python3.10 -m cross_embodiment.cli onboard agent \
+  --run-root "$RUN_ROOT" \
+  --platform-root "$PWD" \
+  --identity "$RUN_ROOT/package-identity.yaml" \
+  --device right_arm \
+  --capability joint_position_state \
+  --capability joint_position \
+  --joint arm.right.joint.0 \
+  --joint arm.right.joint.1 \
+  --joint arm.right.joint.2 \
+  --joint arm.right.joint.3 \
+  --joint arm.right.joint.4 \
+  --joint arm.right.joint.5 \
+  --joint arm.right.joint.6 \
+  --provider deepseek \
+  --model deepseek-chat \
+  --json
 ```
 
-模型不是调用“一键生成脚本”。它需要逐项查询证据、提交两个 Capability
-候选、读取确定性 Matcher 的拒绝原因、确认 Backend Fit，再调用生成和验证工具。
-任何不受证据支持的语义都会在 `submit_candidate` 阶段被拒绝。
+模型不是调用“一键生成脚本”。它需要审查候选及其 Evidence ID，对两项
+Capability 分别形成 `mapped`、`gap`、`unsupported` 或 `unknown` 结论。
+确定性 Runtime 在结论完成后执行 Backend Fit、候选/运行包生成和对应
+Conformance。任何不受证据支持的替代语义仍会在 `submit_candidate` 阶段被拒绝。
 
 ## L1、L2、L3
 
 - **L1**：完成资产清单和接口证据矩阵。证明“发现了什么”，不证明映射或真机。
-- **L2**：生成新包并通过离线 Conformance。证明文件契约及已覆盖的编码/解码行为。
+- **L2 Candidate**：接口字段已映射、缺口已记录、非执行候选包通过静态
+  Conformance；不代表真机执行就绪。
+- **L2 Runtime**：完成策略也已解析，生成运行包并通过离线运行语义
+  Conformance。证明文件契约及已覆盖的编码/解码行为。
 - **L3**：显式加载新包读取真机状态，并在现场授权后完成一次目标和返回。
 
 L3 的三个终端、精确目标文件、确认词和证据记录见

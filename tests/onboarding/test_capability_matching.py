@@ -59,9 +59,20 @@ def move_candidate(*evidence_ids: str) -> CapabilityCandidate:
     })
 
 
+def confirmed_policy(claims: dict) -> dict:
+    return {
+        **claims,
+        "execution_policy_status": "confirmed",
+        "execution_policy_origin": "validated_test_policy",
+    }
+
+
 def test_matches_native_state_and_position_without_promoting_stages() -> None:
     state = ev("state", "ros2_binding", **dict(state_candidate("state").proposed_semantics))
-    move = ev("move", "ros2_binding", **dict(move_candidate("move").proposed_semantics))
+    move = ev(
+        "move", "ros2_binding",
+        **confirmed_policy(dict(move_candidate("move").proposed_semantics)),
+    )
     scope = OnboardingScope("right_arm", ("joint_position_state", "joint_position"), JOINTS, (state_candidate("state"), move_candidate("move")))
     coverage = CapabilityMatcher().assess(CATALOG, matrix(state, move), scope)
 
@@ -94,7 +105,10 @@ def test_conflicting_units_block_candidate() -> None:
 
 def test_weiyi_shaped_extra_interfaces_remain_discovered_unmapped() -> None:
     state = ev("state", "ros2_binding", **dict(state_candidate("state").proposed_semantics))
-    move = ev("move", "ros2_binding", **dict(move_candidate("move").proposed_semantics))
+    move = ev(
+        "move", "ros2_binding",
+        **confirmed_policy(dict(move_candidate("move").proposed_semantics)),
+    )
     extras = [
         ev("power", "ros2_interface_definition", interface="SetPower", interface_kind="srv"),
         ev("stop", "ros2_interface_definition", interface="StopMove", interface_kind="srv"),
@@ -111,29 +125,41 @@ def test_structural_interface_paths_support_nested_mapping_fields() -> None:
         binding_operation="joint_state", transport_kind="ros2_subscription",
         endpoint="/wy/right_arm_state", interface_type="demo/msg/ArmState",
         positions_field="joint_angles", mode_field="arm_mode", ready_values=[104],
+        fault_code_field="arm_fault.fault_code",
         unit="radian", ordered_joints=JOINTS, joint_limits=LIMITS,
     )
     state_type = ev(
         "state-type", "ros2_interface_definition",
+        qualified_interface="demo/msg/ArmState",
         field_paths=["header.stamp", "joint_angles", "arm_mode", "arm_fault.fault_code"],
     )
     move_usage = ev(
         "move-usage", "ros2_action_usage",
-        **{key: value for key, value in dict(move_candidate("move-usage").proposed_semantics).items()
-           if key != "result_description_field"},
+        **confirmed_policy({
+            key: value
+            for key, value in dict(
+                move_candidate("move-usage").proposed_semantics
+            ).items()
+            if key != "result_description_field"
+        }),
     )
     move_type = ev(
         "move-type", "ros2_interface_definition",
+        qualified_interface="demo/action/ArmMove",
         result_field_paths=["result.code", "result.description"],
     )
-    candidate_state = state_candidate("state-usage", "state-type")
+    joint_config = ev(
+        "joint-config", "robot_joint_configuration",
+        unit="radian", joint_limits=LIMITS,
+    )
+    candidate_state = state_candidate("state-usage", "state-type", "joint-config")
     candidate_move = move_candidate("move-usage", "move-type")
     scope = OnboardingScope(
         "right_arm", ("joint_position_state", "joint_position"), JOINTS,
         (candidate_state, candidate_move),
     )
     coverage = CapabilityMatcher().assess(
-        CATALOG, matrix(state_usage, state_type, move_usage, move_type), scope,
+        CATALOG, matrix(state_usage, state_type, move_usage, move_type, joint_config), scope,
     )
     assert coverage.get("joint_position_state").status == "native"
     assert coverage.get("joint_position").status == "native"
@@ -149,8 +175,10 @@ def test_platform_contract_supports_operation_canonical_order_and_state_binding(
     )
     move_evidence = ev(
         "vendor-move", "vendor_binding",
-        **{key: value for key, value in move_semantics.items()
-           if key not in platform_fields | {"state_binding"}},
+        **confirmed_policy({
+            key: value for key, value in move_semantics.items()
+            if key not in platform_fields | {"state_binding"}
+        }),
     )
     scope = OnboardingScope(
         "right_arm", ("joint_position_state", "joint_position"), JOINTS,
@@ -165,7 +193,10 @@ def test_target_unit_can_be_supported_by_vendor_joint_unit_evidence() -> None:
     semantics = dict(move_candidate("move", "unit").proposed_semantics)
     move = ev(
         "move", "ros2_action_usage",
-        **{key: value for key, value in semantics.items() if key != "target_unit"},
+        **confirmed_policy({
+            key: value for key, value in semantics.items()
+            if key != "target_unit"
+        }),
     )
     unit = ev("unit", "robot_joint_configuration", unit="radian")
     scope = OnboardingScope(
@@ -174,3 +205,336 @@ def test_target_unit_can_be_supported_by_vendor_joint_unit_evidence() -> None:
     )
     assessment = CapabilityMatcher().assess(CATALOG, matrix(move, unit), scope).get("joint_position")
     assert assessment.status == "native"
+
+
+def test_policy_values_without_affirmative_confirmation_remain_gaps() -> None:
+    semantics = dict(move_candidate("move").proposed_semantics)
+    move = ev("move", "ros2_action_usage", **semantics)
+    scope = OnboardingScope(
+        "right_arm", ("joint_position",), JOINTS,
+        (move_candidate("move"),),
+    )
+
+    assessment = CapabilityMatcher().assess(
+        CATALOG, matrix(move), scope,
+    ).get("joint_position")
+
+    assert assessment.mapping_complete
+    assert not assessment.execution_policy_complete
+    assert {item.field for item in assessment.missing} == {
+        "timeout_s", "arrival_tolerance_rad", "settle_window_s",
+    }
+
+
+def test_structural_field_must_come_from_the_correct_interface_section() -> None:
+    state_usage = ev(
+        "state", "ros2_subscription_usage",
+        binding_operation="joint_state", transport_kind="ros2_subscription",
+        endpoint="/wy/right_arm_state", interface_type="demo/msg/ArmState",
+        positions_field="joint_angles", mode_field="arm_mode", ready_values=[104],
+        fault_code_field="arm_fault.fault_code",
+    )
+    wrong_section = ev(
+        "type", "ros2_interface_definition",
+        qualified_interface="demo/msg/ArmState",
+        result_field_paths=["header.stamp"],
+    )
+    config = ev(
+        "config", "robot_joint_configuration",
+        unit="radian", joint_limits=LIMITS,
+    )
+    candidate = state_candidate("state", "type", "config")
+    scope = OnboardingScope(
+        "right_arm", ("joint_position_state",), JOINTS, (candidate,),
+    )
+
+    assessment = CapabilityMatcher().assess(
+        CATALOG, matrix(state_usage, wrong_section, config), scope,
+    ).get("joint_position_state")
+
+    assert assessment.status == "unknown"
+    assert {item.field for item in assessment.missing} == {"stamp_field"}
+
+
+def test_unconfirmed_application_policy_is_not_vendor_execution_semantics() -> None:
+    semantics = dict(move_candidate("move").proposed_semantics)
+    move = ev(
+        "move",
+        "ros2_action_usage",
+        **{
+            key: value for key, value in semantics.items()
+            if key not in {"arrival_tolerance_rad", "settle_window_s", "completion"}
+        },
+        execution_policy_status="unconfirmed",
+        execution_policy_origin="python_function_default",
+    )
+    arrival = ev(
+        "arrival",
+        "joint_arrival_policy",
+        arrival_tolerance_rad=0.015,
+        settle_window_s=1.0,
+        completion=["terminal_result", "measured_arrival"],
+        execution_policy_status="unconfirmed",
+        execution_policy_origin="application_helper_default",
+    )
+    candidate = move_candidate("move", "arrival")
+    scope = OnboardingScope("right_arm", ("joint_position",), JOINTS, (candidate,))
+
+    assessment = CapabilityMatcher().assess(CATALOG, matrix(move, arrival), scope).get("joint_position")
+
+    assert assessment.status == "unknown"
+    assert {item.field for item in assessment.missing} == {
+        "timeout_s", "arrival_tolerance_rad", "settle_window_s",
+    }
+
+
+def test_transport_operation_is_deterministically_normalized_to_sdk_operation() -> None:
+    semantics = dict(state_candidate("state", "type", "unit").proposed_semantics)
+    semantics["binding_operation"] = "subscribe"
+    candidate = CapabilityCandidate(
+        "joint_position_state", ("state", "type", "unit"), semantics,
+    )
+    state = ev(
+        "state", "ros2_subscription_usage",
+        transport_operation="subscribe", transport_kind="ros2_subscription",
+        endpoint="/wy/right_arm_state", interface_type="demo/msg/ArmState",
+        positions_field="joint_angles", mode_field="arm_mode", ready_values=[104],
+        fault_code_field="arm_fault.fault_code",
+    )
+    state_type = ev(
+        "type", "ros2_interface_definition",
+        qualified_interface="demo/msg/ArmState",
+        field_paths=["header.stamp", "joint_angles", "arm_mode", "arm_fault.fault_code"],
+    )
+    unit = ev("unit", "robot_joint_configuration", unit="radian", joint_limits=LIMITS)
+    scope = OnboardingScope(
+        "right_arm", ("joint_position_state",), JOINTS, (candidate,),
+    )
+
+    coverage = CapabilityMatcher().assess(CATALOG, matrix(state, state_type, unit), scope)
+
+    assert coverage.get("joint_position_state").status == "native"
+    assert coverage.candidates[0].proposed_semantics["binding_operation"] == "joint_state"
+
+
+def test_transport_operation_normalization_rejects_unobserved_operation() -> None:
+    semantics = dict(state_candidate("state").proposed_semantics)
+    semantics["binding_operation"] = "publish"
+    candidate = CapabilityCandidate(
+        "joint_position_state", ("state", "type", "config"), semantics,
+    )
+    evidence = ev(
+        "state", "ros2_subscription_usage",
+        **{
+            key: value for key, value in semantics.items()
+            if key != "binding_operation"
+        },
+        transport_operation="subscribe",
+        fault_code_field="arm_fault.fault_code",
+    )
+    state_type = ev(
+        "type", "ros2_interface_definition", field_paths=["header.stamp"],
+        qualified_interface="demo/msg/ArmState",
+    )
+    config = ev(
+        "config", "robot_joint_configuration",
+        unit="radian", joint_limits=LIMITS,
+    )
+    scope = OnboardingScope(
+        "right_arm", ("joint_position_state",), JOINTS, (candidate,),
+    )
+
+    assessment = CapabilityMatcher().assess(
+        CATALOG, matrix(evidence, state_type, config), scope,
+    ).get(
+        "joint_position_state"
+    )
+
+    assert assessment.status == "unknown"
+    assert {item.field for item in assessment.missing} == {"binding_operation"}
+
+
+def test_fault_field_requires_fault_code_usage_not_only_structural_path() -> None:
+    semantics = dict(state_candidate("state", "type").proposed_semantics)
+    semantics["fault_field"] = "arm_fault.fault_type.value"
+    candidate = CapabilityCandidate(
+        "joint_position_state", ("state", "type", "config"), semantics,
+    )
+    state = ev(
+        "state", "ros2_subscription_usage",
+        **{
+            key: value for key, value in semantics.items()
+            if key not in {"binding_operation", "fault_field", "stamp_field"}
+        },
+        transport_operation="subscribe",
+        fault_code_field="arm_fault.fault_code",
+    )
+    state_type = ev(
+        "type", "ros2_interface_definition",
+        qualified_interface="demo/msg/ArmState",
+        field_paths=[
+            "header.stamp", "arm_fault.fault_code", "arm_fault.fault_type.value",
+        ],
+    )
+    config = ev(
+        "config", "robot_joint_configuration",
+        unit="radian", joint_limits=LIMITS,
+    )
+    scope = OnboardingScope(
+        "right_arm", ("joint_position_state",), JOINTS, (candidate,),
+    )
+
+    assessment = CapabilityMatcher().assess(
+        CATALOG, matrix(state, state_type, config), scope,
+    ).get(
+        "joint_position_state"
+    )
+
+    assert assessment.status == "unknown"
+    assert {item.field for item in assessment.missing} == {"fault_field"}
+
+
+def test_action_transport_and_state_binding_aliases_normalize_but_policy_stays_gap() -> None:
+    semantics = dict(move_candidate("move", "arrival").proposed_semantics)
+    semantics["binding_operation"] = "send_action_goal"
+    semantics["state_binding"] = "joint_position_state"
+    candidate = CapabilityCandidate(
+        "joint_position", ("move", "arrival"), semantics,
+    )
+    move = ev(
+        "move", "ros2_action_usage",
+        **{
+            key: value for key, value in semantics.items()
+            if key not in {
+                "binding_operation", "state_binding", "arrival_tolerance_rad",
+                "settle_window_s", "completion",
+            }
+        },
+        transport_operation="send_action_goal",
+        execution_policy_status="unconfirmed",
+    )
+    arrival = ev(
+        "arrival", "joint_arrival_policy",
+        arrival_tolerance_rad=semantics["arrival_tolerance_rad"],
+        settle_window_s=semantics["settle_window_s"],
+        completion=semantics["completion"],
+        execution_policy_status="unconfirmed",
+    )
+    scope = OnboardingScope(
+        "right_arm", ("joint_position",), JOINTS, (candidate,),
+    )
+
+    coverage = CapabilityMatcher().assess(CATALOG, matrix(move, arrival), scope)
+    assessment = coverage.get("joint_position")
+
+    assert assessment.status == "unknown"
+    assert coverage.candidates[0].proposed_semantics["binding_operation"] == "joint_position"
+    assert coverage.candidates[0].proposed_semantics["state_binding"] == "right_arm_joint_state"
+    assert {item.field for item in assessment.missing} == {
+        "timeout_s", "arrival_tolerance_rad", "settle_window_s",
+    }
+    assert assessment.candidate_valid
+
+
+def test_structural_field_from_another_interface_cannot_support_candidate() -> None:
+    semantics = dict(state_candidate("state", "wrong-type", "config").proposed_semantics)
+    state = ev(
+        "state", "ros2_subscription_usage",
+        **{
+            key: value for key, value in semantics.items()
+            if key not in {"binding_operation", "stamp_field", "unit", "joint_limits"}
+        },
+        transport_operation="subscribe",
+        fault_code_field="arm_fault.fault_code",
+    )
+    wrong_type = ev(
+        "wrong-type", "ros2_interface_definition",
+        qualified_interface="other/msg/Telemetry",
+        field_paths=["header.stamp"],
+    )
+    config = ev(
+        "config", "robot_joint_configuration", device="right_arm",
+        unit="radian", joint_limits=LIMITS,
+    )
+    candidate = CapabilityCandidate(
+        "joint_position_state", ("state", "wrong-type", "config"), semantics,
+    )
+
+    assessment = CapabilityMatcher().assess(
+        CATALOG, matrix(state, wrong_type, config),
+        OnboardingScope("right_arm", ("joint_position_state",), JOINTS, (candidate,)),
+    ).get("joint_position_state")
+
+    assert assessment.status == "unknown"
+    assert {item.field for item in assessment.missing} == {"stamp_field"}
+
+
+def test_transport_endpoint_associated_with_other_configured_device_is_rejected() -> None:
+    semantics = dict(state_candidate("left", "type", "right-config").proposed_semantics)
+    semantics["endpoint"] = "/wy/left_arm_state"
+    left = ev(
+        "left", "ros2_subscription_usage",
+        **{
+            key: value for key, value in semantics.items()
+            if key not in {"binding_operation", "stamp_field", "unit", "joint_limits"}
+        },
+        transport_operation="subscribe",
+        fault_code_field="arm_fault.fault_code",
+    )
+    interface = ev(
+        "type", "ros2_interface_definition",
+        qualified_interface="demo/msg/ArmState", field_paths=["header.stamp"],
+    )
+    right_config = ev(
+        "right-config", "robot_joint_configuration", device="right_arm",
+        unit="radian", joint_limits=LIMITS,
+    )
+    left_config = ev(
+        "left-config", "robot_joint_configuration", device="left_arm",
+        unit="radian", joint_limits=LIMITS,
+    )
+    candidate = CapabilityCandidate(
+        "joint_position_state", ("left", "type", "right-config"), semantics,
+    )
+
+    assessment = CapabilityMatcher().assess(
+        CATALOG, matrix(left, interface, right_config, left_config),
+        OnboardingScope("right_arm", ("joint_position_state",), JOINTS, (candidate,)),
+    ).get("joint_position_state")
+
+    assert assessment.status == "unknown"
+    endpoint_error = next(item for item in assessment.missing if item.field == "endpoint")
+    assert "another configured device" in endpoint_error.reason
+
+
+def test_transport_endpoint_without_target_device_association_is_rejected() -> None:
+    semantics = dict(state_candidate("left", "type", "right-config").proposed_semantics)
+    semantics["endpoint"] = "/wy/left_arm_state"
+    left = ev(
+        "left", "ros2_subscription_usage",
+        **{
+            key: value for key, value in semantics.items()
+            if key not in {"binding_operation", "stamp_field", "unit", "joint_limits"}
+        },
+        transport_operation="subscribe",
+        fault_code_field="arm_fault.fault_code",
+    )
+    interface = ev(
+        "type", "ros2_interface_definition",
+        qualified_interface="demo/msg/ArmState", field_paths=["header.stamp"],
+    )
+    right_config = ev(
+        "right-config", "robot_joint_configuration", device="right_arm",
+        unit="radian", joint_limits=LIMITS,
+    )
+    candidate = CapabilityCandidate(
+        "joint_position_state", ("left", "type", "right-config"), semantics,
+    )
+
+    assessment = CapabilityMatcher().assess(
+        CATALOG, matrix(left, interface, right_config),
+        OnboardingScope("right_arm", ("joint_position_state",), JOINTS, (candidate,)),
+    ).get("joint_position_state")
+
+    endpoint_error = next(item for item in assessment.missing if item.field == "endpoint")
+    assert "does not prove association" in endpoint_error.reason

@@ -6,13 +6,68 @@ import sys
 
 import yaml
 
-from cross_embodiment.cli import main
+from cross_embodiment.cli import _build_parser, _write_provider_transcript, main
 from cross_embodiment.onboarding.generator import PackageGenerator
-from tests.onboarding.test_package_generator import inputs
+from tests.onboarding.test_package_generator import inputs, partial_policy_inputs
 
 
 ROOT = Path(__file__).resolve().parents[2]
 VENDOR = Path(__file__).parent / "fixtures" / "ros2_vendor"
+
+
+def test_agent_cli_is_the_formal_deepseek_entrypoint(tmp_path: Path) -> None:
+    args = _build_parser().parse_args([
+        "onboard", "agent",
+        "--run-root", str(tmp_path / "run"),
+        "--platform-root", str(ROOT),
+        "--identity", str(tmp_path / "identity.yaml"),
+        "--device", "right_arm",
+        "--capability", "joint_position_state",
+        "--capability", "joint_position",
+        "--joint", "arm.right.joint.0",
+        "--provider", "deepseek",
+    ])
+
+    assert args.onboard_phase == "agent"
+    assert args.capability == ["joint_position_state", "joint_position"]
+    assert args.joint == ["arm.right.joint.0"]
+    assert args.provider == "deepseek"
+
+
+def test_agent_cli_requires_exact_first_version_capability_scope(tmp_path: Path, capsys) -> None:
+    identity = tmp_path / "identity.yaml"
+    identity.write_text("package_name: example/test\n")
+    code = main([
+        "onboard", "agent",
+        "--run-root", str(tmp_path / "run"),
+        "--platform-root", str(ROOT),
+        "--identity", str(identity),
+        "--device", "right_arm",
+        "--capability", "joint_position_state",
+        "--joint", "arm.right.joint.0",
+    ])
+
+    assert code == 2
+    assert "joint_position_state and joint_position" in capsys.readouterr().err
+
+
+def test_provider_transcript_records_messages_without_credentials(tmp_path: Path) -> None:
+    output = tmp_path / "provider-transcript.json"
+    provider = type("Provider", (), {
+        "messages": (
+            {"role": "assistant", "tool_calls": [{"id": "call-1"}]},
+            {"role": "tool", "tool_call_id": "call-1", "content": "{\"ok\": true}"},
+        ),
+    })()
+
+    _write_provider_transcript(output, provider, "deepseek", "deepseek-chat")
+
+    saved = json.loads(output.read_text())
+    assert saved["schema_version"] == "onboarding-provider-transcript/v0.1"
+    assert [item["role"] for item in saved["messages"]] == ["assistant", "tool"]
+    text = output.read_text()
+    assert "api_key" not in text.lower()
+    assert "authorization" not in text.lower()
 
 
 def test_inspect_requires_explicit_roots_and_writes_stable_artifacts(tmp_path: Path, capsys) -> None:
@@ -62,6 +117,29 @@ def test_validate_and_report_use_only_staged_generated_package(tmp_path: Path, c
     report = json.loads(capsys.readouterr().out)
     assert report["l2"] == "passed"
     assert report["motion_sent"] is False
+
+
+def test_validate_candidate_cli_keeps_unresolved_policy_non_executable(
+    tmp_path: Path, capsys,
+) -> None:
+    run_root = tmp_path / "run"
+    run_root.mkdir()
+    coverage, evidence, backend, identity = partial_policy_inputs()
+    PackageGenerator.generate_candidate(
+        coverage, evidence, backend, run_root / "hardware-package-candidate",
+        identity,
+    )
+
+    assert main([
+        "onboard", "validate-candidate", "--run-root", str(run_root), "--json",
+    ]) == 0
+    result = json.loads(capsys.readouterr().out)
+
+    assert result["passed"] is True
+    assert result["candidate_only"] is True
+    assert result["live_execution_ready"] is False
+    assert result["motion_sent"] is False
+    assert "execution_policy_gap_recorded" in result["checks"]
 
 
 def test_read_only_preflight_cli_has_no_run_root_or_motion(monkeypatch, tmp_path: Path, capsys) -> None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import asdict
 import json
 import os
 import runpy
@@ -346,14 +347,38 @@ def _build_parser() -> argparse.ArgumentParser:
     assess.add_argument("--scope", type=Path, required=True)
     assess.add_argument("--candidates", type=Path, required=True)
     assess.add_argument("--json", action="store_true")
+    derive = phases.add_parser("derive-candidates")
+    derive.add_argument("--run-root", type=Path, required=True)
+    derive.add_argument("--scope", type=Path, required=True)
+    derive.add_argument("--json", action="store_true")
     generate = phases.add_parser("generate")
     generate.add_argument("--run-root", type=Path, required=True)
     generate.add_argument("--identity", type=Path, required=True)
     generate.add_argument("--json", action="store_true")
-    for name in ("validate", "report"):
+    generate_candidate = phases.add_parser("generate-candidate")
+    generate_candidate.add_argument("--run-root", type=Path, required=True)
+    generate_candidate.add_argument("--identity", type=Path, required=True)
+    generate_candidate.add_argument("--json", action="store_true")
+    for name in ("validate", "validate-candidate", "report"):
         phase = phases.add_parser(name)
         phase.add_argument("--run-root", type=Path, required=True)
         phase.add_argument("--json", action="store_true")
+    agent = phases.add_parser(
+        "agent",
+        help="run evidence reasoning through the stateful typed-tool onboarding protocol",
+    )
+    agent.add_argument("--run-root", type=Path, required=True)
+    agent.add_argument("--platform-root", type=Path, required=True)
+    agent.add_argument("--identity", type=Path, required=True)
+    agent.add_argument("--device", required=True)
+    agent.add_argument("--capability", action="append", required=True)
+    agent.add_argument("--joint", action="append", required=True)
+    agent.add_argument("--provider", choices=("deepseek",), default="deepseek")
+    agent.add_argument("--model", default="deepseek-chat")
+    agent.add_argument("--thinking", action="store_true")
+    agent.add_argument("--max-turns", type=int, default=32)
+    agent.add_argument("--output", type=Path)
+    agent.add_argument("--json", action="store_true")
     preflight = phases.add_parser(
         "preflight",
         help="read state through one explicit generated Hardware Package without enabling control",
@@ -380,6 +405,35 @@ def _emit_onboarding(value: dict[str, Any], as_json: bool) -> None:
         print(json.dumps(value, sort_keys=True))
     else:
         print(yaml.safe_dump(value, sort_keys=False).rstrip())
+
+
+def _plain_onboarding_value(value):
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, dict):
+        return {str(key): _plain_onboarding_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_plain_onboarding_value(item) for item in value]
+    return value
+
+
+def _write_provider_transcript(
+    path: Path,
+    provider,
+    provider_name: str,
+    model: str,
+) -> None:
+    document = {
+        "schema_version": "onboarding-provider-transcript/v0.1",
+        "provider": provider_name,
+        "model": model,
+        "messages": _plain_onboarding_value(provider.messages),
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(document, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
 
 def _onboard(args) -> int:
@@ -430,6 +484,52 @@ def _onboard(args) -> int:
         _emit_onboarding(record.to_dict(), args.json)
         return 0 if record.classification == "passed" else 12
 
+    if args.onboard_phase == "agent":
+        from ..onboarding.agent import OnboardingAgent, OnboardingGoal
+        from ..onboarding.providers import DeepSeekProvider
+        from ..onboarding.workflow import OnboardingWorkflow
+
+        required_capabilities = {"joint_position_state", "joint_position"}
+        if (
+            len(args.capability) != len(required_capabilities)
+            or set(args.capability) != required_capabilities
+        ):
+            raise ValueError(
+                "first-version onboarding requires exactly joint_position_state and joint_position"
+            )
+        workflow = OnboardingWorkflow(args.run_root, args.platform_root)
+        provider = DeepSeekProvider(model=args.model, thinking=args.thinking)
+        result = OnboardingAgent(provider, max_turns=args.max_turns).run(
+            OnboardingGoal(
+                device_id=args.device,
+                capability_ids=tuple(args.capability),
+                ordered_joints=tuple(args.joint),
+                identity_path=args.identity,
+            ),
+            workflow,
+        )
+
+        payload = _plain_onboarding_value(asdict(result))
+        payload.update({
+            "phase": "agent",
+            "provider": args.provider,
+            "model": args.model,
+            "motion_sent": False,
+        })
+        output = args.output or (args.run_root / "agent-run.json")
+        output.parent.mkdir(parents=True, exist_ok=True)
+        transcript_path = args.run_root / "provider-transcript.json"
+        _write_provider_transcript(
+            transcript_path, provider, args.provider, args.model,
+        )
+        payload["provider_transcript"] = str(transcript_path)
+        output.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        _emit_onboarding(payload, args.json)
+        return 0 if result.completed else 15
+
     from ..onboarding.workflow import AssetInsufficiency, ConformanceFailure, OnboardingWorkflow
 
     workflow = OnboardingWorkflow(
@@ -447,12 +547,56 @@ def _onboard(args) -> int:
         ], "motion_sent": False}
         _emit_onboarding(result, args.json)
         return 0 if complete else AssetInsufficiency.exit_code
+    elif args.onboard_phase == "derive-candidates":
+        coverage = workflow.derive_candidates(args.scope)
+        result = {
+            "phase": "derive-candidates",
+            "candidate_path": str(
+                workflow.run_root / "deterministic-candidates.yaml"
+            ),
+            "assessments": [{
+                "capability_id": item.capability_id,
+                "status": item.status,
+                "candidate_valid": item.candidate_valid,
+                "interface_mapped": item.mapping_complete,
+                "execution_policy_complete": item.execution_policy_complete,
+                "missing_fields": [entry.field for entry in item.missing],
+            } for item in coverage.assessments],
+            "motion_sent": False,
+        }
     elif args.onboard_phase == "generate":
         generated = workflow.generate(args.identity)
         result = {"phase": "generate", "package_root": str(generated.root), "motion_sent": False}
+    elif args.onboard_phase == "generate-candidate":
+        generated = workflow.generate_candidate(args.identity)
+        result = {
+            "phase": "generate-candidate",
+            "package_root": str(generated.root),
+            "package_status": generated.package_status,
+            "live_execution_ready": False,
+            "motion_sent": False,
+        }
     elif args.onboard_phase == "validate":
         report = workflow.validate()
         result = {"phase": "validate", "passed": report.passed, "checks": list(report.checks), "failures": list(report.failures), "resolved_package_root": str(report.resolved_package_root), "resolved_mapping_path": str(report.resolved_mapping_path) if report.resolved_mapping_path else None, "motion_sent": False}
+        _emit_onboarding(result, args.json)
+        return 0 if report.passed else ConformanceFailure.exit_code
+    elif args.onboard_phase == "validate-candidate":
+        report = workflow.validate_candidate()
+        result = {
+            "phase": "validate-candidate",
+            "passed": report.passed,
+            "checks": list(report.checks),
+            "failures": list(report.failures),
+            "resolved_package_root": str(report.resolved_package_root),
+            "resolved_mapping_path": (
+                str(report.resolved_mapping_path)
+                if report.resolved_mapping_path else None
+            ),
+            "candidate_only": True,
+            "live_execution_ready": False,
+            "motion_sent": False,
+        }
         _emit_onboarding(result, args.json)
         return 0 if report.passed else ConformanceFailure.exit_code
     else:

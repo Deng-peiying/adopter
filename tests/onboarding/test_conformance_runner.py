@@ -7,7 +7,7 @@ import yaml
 import pytest
 
 from cross_embodiment.onboarding.conformance import ConformanceRunner, IndependentEvaluator
-from tests.onboarding.test_package_generator import inputs
+from tests.onboarding.test_package_generator import inputs, partial_policy_inputs
 from cross_embodiment.onboarding.generator import PackageGenerator
 
 
@@ -27,6 +27,28 @@ def test_generated_package_passes_offline_runtime_conformance(tmp_path: Path) ->
     }
     assert report.resolved_package_root == root.resolve()
     assert report.resolved_mapping_path == (root / "config/right_arm_ros2_mapping.yaml").resolve()
+
+
+def test_candidate_package_passes_static_conformance_and_cannot_be_runtime_loaded(
+    tmp_path: Path,
+) -> None:
+    coverage, evidence, backend, identity = partial_policy_inputs()
+    generated = PackageGenerator.generate_candidate(
+        coverage, evidence, backend, tmp_path / "candidate-only", identity,
+    )
+
+    report = ConformanceRunner().validate_candidate_package(generated.root)
+
+    assert report.passed
+    assert set(report.checks) >= {
+        "package_schema", "asset_digests", "candidate_mapping_schema",
+        "interface_mapping_complete", "runtime_execution_blocked",
+        "execution_policy_gap_recorded",
+    }
+    assert report.resolved_mapping_path == generated.mapping_yaml.resolve()
+    package = yaml.safe_load(generated.package_yaml.read_text())
+    assert package.get("defaults", {}) == {}
+    assert not (generated.root / "config/connection.yaml").exists()
 
 
 def test_tampered_asset_digest_fails(tmp_path: Path) -> None:

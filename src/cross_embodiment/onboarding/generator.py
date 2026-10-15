@@ -8,8 +8,9 @@ from typing import Any
 import yaml
 
 from .backend_fit import BackendFitReport
-from .capability import CapabilityCoverage
+from .capability import CapabilityCoverage, required_candidate_fields
 from .evidence import EvidenceMatrix
+from .evidence_contract import execution_policy_fields
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,7 @@ class GeneratedPackage:
     embodiment_yaml: Path
     mapping_yaml: Path
     provenance_yaml: Path
+    package_status: str = "runtime"
 
 
 def _plain(value: Any) -> Any:
@@ -54,6 +56,280 @@ def _digest(path: Path) -> str:
 
 
 class PackageGenerator:
+    @staticmethod
+    def generate_candidate(
+        coverage: CapabilityCoverage,
+        evidence: EvidenceMatrix,
+        backend_fit: BackendFitReport,
+        output_root: Path,
+        package_identity: PackageIdentity,
+    ) -> GeneratedPackage:
+        """Generate an auditable package candidate that cannot start a runtime.
+
+        This form is used when the vendor interface mapping and Backend fit are
+        complete but Runtime Completion Policy is unresolved. It deliberately
+        has no runtime mapping asset, connection defaults, or Backend
+        entrypoint.
+        """
+        required = {"joint_position_state", "joint_position"}
+        assessments = {item.capability_id: item for item in coverage.assessments}
+        candidates = {item.capability_id: item for item in coverage.candidates}
+        fit_ids = {
+            item.capability_id for item in backend_fit.fits
+            if item.backend_id == package_identity.backend_id
+        }
+        for capability_id in sorted(required):
+            assessment = assessments.get(capability_id)
+            if assessment is None or not assessment.mapping_complete:
+                raise ValueError(
+                    f"required capability {capability_id} interface mapping is incomplete"
+                )
+            if assessment.conflicts:
+                raise ValueError(
+                    f"required capability {capability_id} has conflicts: "
+                    f"{assessment.conflicts}"
+                )
+            if capability_id not in candidates:
+                raise ValueError(
+                    f"required capability {capability_id} has no mapping candidate"
+                )
+            if capability_id not in fit_ids:
+                raise ValueError(
+                    f"required capability {capability_id} has no backend fit"
+                )
+            for evidence_id in assessment.evidence_ids:
+                evidence.get(evidence_id)
+
+        state = dict(candidates["joint_position_state"].proposed_semantics)
+        move = dict(candidates["joint_position"].proposed_semantics)
+        expected_state_binding = f"{package_identity.device_id}_joint_state"
+        if move.get("state_binding") != expected_state_binding:
+            raise ValueError(
+                "package identity device does not match assessed state binding"
+            )
+        joints = tuple(state.get("ordered_joints", ()))
+        limits = tuple(state.get("joint_limits", ()))
+        if (
+            len(joints) == 0
+            or len(joints) != len(limits)
+            or tuple(move.get("ordered_joints", ())) != joints
+        ):
+            raise ValueError(
+                "state and action require the same explicit joints and joint limits"
+            )
+        if (
+            state.get("unit") != "radian"
+            or move.get("unit") != "radian"
+            or move.get("target_unit") not in {"radian", "degree"}
+        ):
+            raise ValueError("required units are missing or unsupported")
+
+        policy_fields = set(execution_policy_fields("joint_position"))
+        required_state = set(required_candidate_fields("joint_position_state"))
+        required_move = (
+            set(required_candidate_fields("joint_position")) - policy_fields
+        )
+        missing = sorted(
+            (required_state - set(state)) | (required_move - set(move))
+        )
+        if missing:
+            raise ValueError(
+                f"candidate interface mapping is missing required fields: {missing}"
+            )
+        unresolved = sorted(
+            item.field for item in assessments["joint_position"].missing
+            if item.field in policy_fields
+        )
+        if not unresolved:
+            raise ValueError(
+                "candidate package requires explicitly unresolved execution policy"
+            )
+
+        root = output_root.resolve()
+        if root.exists() and any(root.iterdir()):
+            raise ValueError(f"generation output must be empty: {root}")
+        (root / "config").mkdir(parents=True, exist_ok=True)
+        mapping_name = f"{package_identity.device_id}_ros2_mapping.candidate.yaml"
+        mapping_path = root / "config" / mapping_name
+        embodiment_path = root / "embodiment.yaml"
+        provenance_path = root / "generation-provenance.yaml"
+        package_path = root / "package.yaml"
+
+        state_id = f"{package_identity.device_id}_joint_state"
+        move_id = f"{package_identity.device_id}_joint_position"
+        semantic = {
+            "device": package_identity.device_id,
+            "joints": joints,
+            "unit": "radian",
+        }
+        mapping = {
+            "schema_version": "interface-mapping-candidate/v0.1",
+            "live_execution_ready": False,
+            "bindings": {
+                state_id: {
+                    "interface_mapped": True,
+                    "semantic": {"operation": "joint_state", **semantic},
+                    "transport": {
+                        "backend": "ros2",
+                        "kind": "subscription",
+                        "endpoint": state["endpoint"],
+                        "interface": state["interface_type"],
+                    },
+                    "decode": {
+                        "positions": state["positions_field"],
+                        "stamp": state["stamp_field"],
+                        "mode": state["mode_field"],
+                        "ready_values": state["ready_values"],
+                        "fault": state["fault_field"],
+                        "unit": state["unit"],
+                    },
+                    "evidence": candidates["joint_position_state"].evidence_ids,
+                },
+                move_id: {
+                    "interface_mapped": True,
+                    "semantic": {"operation": "joint_position", **semantic},
+                    "transport": {
+                        "backend": "ros2",
+                        "kind": "action",
+                        "endpoint": move["endpoint"],
+                        "interface": move["interface_type"],
+                    },
+                    "encode": {
+                        "positions": {
+                            "source": "positions",
+                            "field": move["target_field"],
+                            "unit": move["target_unit"],
+                        },
+                        "constants": move["constants"],
+                    },
+                    "result": {
+                        "error_code": move["result_code_field"],
+                        "description": move["result_description_field"],
+                        "success_code": move["success_code"],
+                    },
+                    "completion_policy": {
+                        "status": "unresolved",
+                        "state_binding": state_id,
+                        "completion": move["completion"],
+                        "missing_fields": unresolved,
+                    },
+                    "evidence": candidates["joint_position"].evidence_ids,
+                },
+            },
+        }
+        _write_yaml(mapping_path, mapping)
+
+        device_joints = [
+            {
+                "canonical_name": name,
+                "type": "revolute",
+                "unit": "radian",
+                "limits": list(limit),
+            }
+            for name, limit in zip(joints, limits)
+        ]
+        embodiment = {
+            "schema_version": "embodiment/v0.2",
+            "embodiment": {
+                "type": package_identity.embodiment_type,
+                "dof": len(joints),
+            },
+            "devices": [{
+                "id": package_identity.device_id,
+                "type": "arm",
+                "capabilities": ["joint_state"],
+                "candidate_capabilities": ["joint_position"],
+                "joints": device_joints,
+            }],
+            "control": {"supported_modes": []},
+            "adapter": {"backend": package_identity.backend_id},
+        }
+        _write_yaml(embodiment_path, embodiment)
+
+        used_ids = tuple(sorted(set(
+            candidates["joint_position_state"].evidence_ids
+            + candidates["joint_position"].evidence_ids
+        )))
+        provenance = {
+            "schema_version": "generation-provenance/v0.1",
+            "package": package_identity.package_name,
+            "package_status": "candidate",
+            "live_execution_ready": False,
+            "capabilities": {
+                capability_id: {
+                    "status": assessments[capability_id].status,
+                    "interface_mapped": assessments[capability_id].mapping_complete,
+                    "execution_policy_complete": assessments[
+                        capability_id
+                    ].execution_policy_complete,
+                    "unresolved_fields": [
+                        item.field for item in assessments[capability_id].missing
+                    ],
+                    "evidence_ids": list(candidates[capability_id].evidence_ids),
+                    "backend": package_identity.backend_id,
+                }
+                for capability_id in sorted(required)
+            },
+            "evidence": [
+                {
+                    "evidence_id": identifier,
+                    "source_path": evidence.get(identifier).source_path.as_posix(),
+                    "confidence_boundary": evidence.get(
+                        identifier
+                    ).confidence_boundary,
+                }
+                for identifier in used_ids
+            ],
+            "unmapped_evidence_ids": list(
+                coverage.discovered_unmapped_evidence_ids
+            ),
+        }
+        _write_yaml(provenance_path, provenance)
+        package = {
+            "schema_version": "hardware-package/v0.1",
+            "package": {
+                "name": package_identity.package_name,
+                "version": package_identity.version,
+                "vendor": package_identity.vendor,
+                "model": package_identity.model,
+                "type": "robot",
+            },
+            "embodiment_manifest": "embodiment.yaml",
+            "assets": {
+                "interface_mapping_candidate": [{
+                    "format": "yaml",
+                    "path": f"config/{mapping_name}",
+                    "source": True,
+                    "digest": f"sha256:{_digest(mapping_path)}",
+                }],
+                "generation_provenance": [{
+                    "format": "yaml",
+                    "path": "generation-provenance.yaml",
+                    "source": True,
+                    "digest": f"sha256:{_digest(provenance_path)}",
+                }],
+            },
+            "backends": [{
+                "id": package_identity.backend_id,
+                "type": "candidate",
+                "requirements": {"ros_distro": package_identity.ros_distro},
+            }],
+            "validation": {
+                "scope": [package_identity.device_id],
+                "capabilities": sorted(required),
+                "candidate_only": True,
+                "interface_mapped": True,
+                "completion_policy": "unresolved",
+                "unresolved_fields": unresolved,
+                "live_execution_ready": False,
+            },
+        }
+        _write_yaml(package_path, package)
+        return GeneratedPackage(
+            root, package_path, embodiment_path, mapping_path, provenance_path,
+            package_status="candidate",
+        )
+
     @staticmethod
     def generate(
         coverage: CapabilityCoverage,
@@ -82,6 +358,11 @@ class PackageGenerator:
 
         state = dict(candidates["joint_position_state"].proposed_semantics)
         move = dict(candidates["joint_position"].proposed_semantics)
+        expected_state_binding = f"{package_identity.device_id}_joint_state"
+        if move.get("state_binding") != expected_state_binding:
+            raise ValueError(
+                "package identity device does not match assessed state binding"
+            )
         joints = tuple(state.get("ordered_joints", ()))
         limits = tuple(state.get("joint_limits", ()))
         if len(joints) == 0 or len(joints) != len(limits) or tuple(move.get("ordered_joints", ())) != joints:
@@ -89,8 +370,11 @@ class PackageGenerator:
         if state.get("unit") != "radian" or move.get("unit") != "radian" or move.get("target_unit") not in {"radian", "degree"}:
             raise ValueError("required units are missing or unsupported")
 
-        required_state = {"endpoint", "interface_type", "positions_field", "stamp_field", "mode_field", "ready_values", "fault_field"}
-        required_move = {"endpoint", "interface_type", "timeout_s", "target_field", "constants", "result_code_field", "result_description_field", "success_code", "state_binding", "arrival_tolerance_rad", "settle_window_s"}
+        # The generator consumes the same versioned field contract as the
+        # matcher. It must not maintain a second, hidden list of required
+        # candidate fields.
+        required_state = set(required_candidate_fields("joint_position_state"))
+        required_move = set(required_candidate_fields("joint_position"))
         missing = sorted((required_state - set(state)) | (required_move - set(move)))
         if missing:
             raise ValueError(f"mapping candidate is missing required fields: {missing}")
@@ -100,7 +384,8 @@ class PackageGenerator:
             raise ValueError(f"generation output must be empty: {root}")
         (root / "config").mkdir(parents=True, exist_ok=True)
         (root / "tests").mkdir(parents=True, exist_ok=True)
-        mapping_path = root / "config" / "right_arm_ros2_mapping.yaml"
+        mapping_name = f"{package_identity.device_id}_ros2_mapping.yaml"
+        mapping_path = root / "config" / mapping_name
         embodiment_path = root / "embodiment.yaml"
         provenance_path = root / "generation-provenance.yaml"
         package_path = root / "package.yaml"
@@ -141,7 +426,10 @@ class PackageGenerator:
             "adapter": {"backend": package_identity.backend_id},
         }
         _write_yaml(embodiment_path, embodiment)
-        _write_yaml(root / "config" / "connection.yaml", {"mapping_path": "config/right_arm_ros2_mapping.yaml", "manage_process": False})
+        _write_yaml(
+            root / "config" / "connection.yaml",
+            {"mapping_path": f"config/{mapping_name}", "manage_process": False},
+        )
 
         used_ids = tuple(sorted(set(candidates["joint_position_state"].evidence_ids + candidates["joint_position"].evidence_ids)))
         provenance = {
@@ -168,7 +456,7 @@ class PackageGenerator:
             "package": {"name": package_identity.package_name, "version": package_identity.version, "vendor": package_identity.vendor, "model": package_identity.model, "type": "robot"},
             "embodiment_manifest": "embodiment.yaml",
             "assets": {
-                "interface_mapping": [{"format": "yaml", "path": "config/right_arm_ros2_mapping.yaml", "source": True, "digest": f"sha256:{_digest(mapping_path)}"}],
+                "interface_mapping": [{"format": "yaml", "path": f"config/{mapping_name}", "source": True, "digest": f"sha256:{_digest(mapping_path)}"}],
                 "generation_provenance": [{"format": "yaml", "path": "generation-provenance.yaml", "source": True, "digest": f"sha256:{_digest(provenance_path)}"}],
             },
             "backends": [{"id": package_identity.backend_id, "type": "python", "entrypoint": package_identity.backend_entrypoint, "platforms": [{"os": package_identity.os, "arch": package_identity.arch}], "requirements": {"ros_distro": package_identity.ros_distro}}],

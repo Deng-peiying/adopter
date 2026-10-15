@@ -71,7 +71,10 @@ class BackendFit:
         assessments = {item.capability_id: item for item in coverage.assessments}
         for candidate in coverage.candidates:
             assessment = assessments.get(candidate.capability_id)
-            if not assessment or assessment.status not in {"native", "derived"}:
+            if not assessment or (
+                assessment.status not in {"native", "derived"}
+                and not assessment.mapping_complete
+            ):
                 continue
             transport = str(candidate.proposed_semantics.get("transport_kind", "unknown"))
             operation = str(candidate.proposed_semantics.get("binding_operation", "unknown"))
