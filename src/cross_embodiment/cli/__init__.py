@@ -39,6 +39,12 @@ def _registry_root(project_path: Path, configured: Path | None = None) -> Path:
     return Path.home() / ".cross_embodiment" / "registry"
 
 
+def _package_store(configured: Path | None = None) -> Path:
+    if configured is not None:
+        return configured
+    return Path(os.environ.get("CROSS_EMBODIMENT_STORE", Path.home() / ".cross_embodiment"))
+
+
 def _load(
     project_path: Path,
     *,
@@ -334,6 +340,40 @@ def _build_parser() -> argparse.ArgumentParser:
     host.add_argument("--robot")
     host.add_argument("--control-enabled", action="store_true")
     host.add_argument("--registry", type=Path)
+    package = sub.add_parser("package", help="build and manage immutable Hardware Packages")
+    package_commands = package.add_subparsers(dest="package_command", required=True)
+    package_build = package_commands.add_parser("build")
+    package_build.add_argument("--package-root", required=True, type=Path)
+    package_build.add_argument("--output", required=True, type=Path)
+    package_build.add_argument("--json", action="store_true")
+    package_install = package_commands.add_parser("install")
+    package_install.add_argument("--artifact", required=True, type=Path)
+    package_install.add_argument("--store", type=Path)
+    package_install.add_argument("--json", action="store_true")
+    package_list = package_commands.add_parser("list")
+    package_list.add_argument("--store", type=Path)
+    package_list.add_argument("--json", action="store_true")
+    package_inspect = package_commands.add_parser("inspect")
+    package_inspect.add_argument("reference")
+    package_inspect.add_argument("--store", type=Path)
+    package_inspect.add_argument("--json", action="store_true")
+    package_activate = package_commands.add_parser("activate")
+    package_activate.add_argument("reference")
+    package_activate.add_argument("--instance", required=True, type=Path)
+    package_activate.add_argument("--store", type=Path)
+    package_activate.add_argument("--json", action="store_true")
+    package_use = package_commands.add_parser("use")
+    package_use.add_argument("--instance", required=True)
+    package_use.add_argument("--store", type=Path)
+    package_use.add_argument("--json", action="store_true")
+    package_deactivate = package_commands.add_parser("deactivate")
+    package_deactivate.add_argument("--instance", required=True)
+    package_deactivate.add_argument("--store", type=Path)
+    package_deactivate.add_argument("--json", action="store_true")
+    package_uninstall = package_commands.add_parser("uninstall")
+    package_uninstall.add_argument("reference")
+    package_uninstall.add_argument("--store", type=Path)
+    package_uninstall.add_argument("--json", action="store_true")
     onboard = sub.add_parser("onboard", help="inspect vendor assets and generate a Hardware Package")
     phases = onboard.add_subparsers(dest="onboard_phase", required=True)
     inspect = phases.add_parser("inspect")
@@ -416,6 +456,48 @@ def _build_parser() -> argparse.ArgumentParser:
     accept_l3.add_argument("--output", type=Path)
     accept_l3.add_argument("--json", action="store_true")
     return parser
+
+
+def _emit_package(value: Any, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(value, ensure_ascii=False, sort_keys=True))
+    else:
+        print(yaml.safe_dump(value, sort_keys=False).rstrip())
+
+
+def _package_command(args) -> int:
+    from ..package.artifact import build_package_artifact
+    from ..package.lifecycle import PackageLifecycle
+
+    if args.package_command == "build":
+        record = build_package_artifact(args.package_root, args.output)
+        result = record.to_dict()
+        result.update({"artifact": str(args.output.resolve()), "hardware_connected": False})
+    else:
+        lifecycle = PackageLifecycle(_package_store(args.store))
+        if args.package_command == "install":
+            result = lifecycle.install(args.artifact).to_dict()
+            result["hardware_connected"] = False
+        elif args.package_command == "list":
+            result = [item.to_dict() for item in lifecycle.list()]
+        elif args.package_command == "inspect":
+            result = lifecycle.inspect(args.reference).to_dict()
+        elif args.package_command == "activate":
+            result = lifecycle.activate(args.reference, args.instance).to_dict()
+            result["hardware_connected"] = False
+        elif args.package_command == "use":
+            result = lifecycle.resolve_use(args.instance).to_dict()
+        elif args.package_command == "deactivate":
+            lifecycle.deactivate(args.instance)
+            result = {"deactivated": args.instance, "hardware_connected": False}
+        elif args.package_command == "uninstall":
+            removed = lifecycle.uninstall(args.reference)
+            result = asdict(removed)
+            result["hardware_connected"] = False
+        else:  # pragma: no cover - argparse enforces the command set
+            raise ValueError(f"Unknown package command: {args.package_command}")
+    _emit_package(result, args.json)
+    return 0
 
 
 def _emit_onboarding(value: dict[str, Any], as_json: bool) -> None:
@@ -650,6 +732,8 @@ def _onboard(args) -> int:
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     try:
+        if args.command == "package":
+            return _package_command(args)
         if args.command == "onboard":
             return _onboard(args)
         if args.command == "validate":
