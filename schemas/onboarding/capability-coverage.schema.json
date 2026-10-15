@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cross-embodiment.dev/schemas/onboarding/capability-coverage.schema.json",
+  "title": "Capability coverage",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "assessments"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "capability-coverage/v0.1"
+    },
+    "assessments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "capability_id",
+          "status",
+          "evidence_ids",
+          "stages",
+          "missing",
+          "conflicts"
+        ],
+        "properties": {
+          "capability_id": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "native",
+              "derived",
+              "unsupported",
+              "unknown"
+            ]
+          },
+          "evidence_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "stages": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "discovered",
+              "backend_expressible",
+              "mapped",
+              "offline_verified",
+              "runtime_read_verified",
+              "hardware_motion_verified",
+              "hardware_motion_record_id"
+            ],
+            "properties": {
+              "discovered": {
+                "type": "boolean"
+              },
+              "backend_expressible": {
+                "type": "boolean"
+              },
+              "mapped": {
+                "type": "boolean"
+              },
+              "offline_verified": {
+                "type": "boolean"
+              },
+              "runtime_read_verified": {
+                "type": "boolean"
+              },
+              "hardware_motion_verified": {
+                "type": "boolean"
+              },
+              "hardware_motion_record_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          "missing": {
+            "type": "array"
+          },
+          "conflicts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}
