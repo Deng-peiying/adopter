@@ -155,7 +155,18 @@ def _load_coverage(path: Path) -> CapabilityCoverage:
 class OnboardingWorkflow:
     def __init__(self, run_root: Path, platform_root: Path | None = None):
         self.run_root = run_root.resolve()
-        self.platform_root = (platform_root or Path(__file__).resolve().parents[3]).resolve()
+        if platform_root is None:
+            isolation_manifest = self.run_root / "isolation-manifest.yaml"
+            if isolation_manifest.is_file():
+                saved = yaml.safe_load(
+                    isolation_manifest.read_text(encoding="utf-8")
+                ) or {}
+                saved_platform_root = saved.get("platform_root")
+                if isinstance(saved_platform_root, str) and saved_platform_root:
+                    platform_root = Path(saved_platform_root)
+        self.platform_root = (
+            platform_root or Path(__file__).resolve().parents[3]
+        ).resolve()
 
     def inspect(self, vendor_roots: tuple[Path, ...], denied_roots: tuple[Path, ...] = ()) -> dict[str, Any]:
         self.run_root.mkdir(parents=True, exist_ok=True)

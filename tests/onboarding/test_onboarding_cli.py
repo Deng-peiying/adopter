@@ -8,6 +8,7 @@ import yaml
 
 from cross_embodiment.cli import _build_parser, _write_provider_transcript, main
 from cross_embodiment.onboarding.generator import PackageGenerator
+from cross_embodiment.onboarding.workflow import OnboardingWorkflow
 from tests.onboarding.test_package_generator import inputs, partial_policy_inputs
 from tests.onboarding.test_runtime_policy import _unresolved_run
 
@@ -90,6 +91,26 @@ def test_inspect_rejects_denied_vendor_root(tmp_path: Path, capsys) -> None:
     code = main(["onboard", "inspect", "--vendor-root", str(VENDOR), "--platform-root", str(ROOT), "--run-root", str(run_root), "--denied-root", str(VENDOR)])
     assert code == 2
     assert "denied" in capsys.readouterr().err.lower()
+
+
+def test_resumed_workflow_restores_platform_root_from_isolation_manifest(
+    tmp_path: Path,
+) -> None:
+    run_root = tmp_path / "run"
+    platform_root = tmp_path / "installed-platform"
+    run_root.mkdir()
+    platform_root.mkdir()
+    (run_root / "isolation-manifest.yaml").write_text(yaml.safe_dump({
+        "schema_version": "onboarding-isolation/v0.1",
+        "vendor_roots": [],
+        "platform_root": str(platform_root),
+        "output_root": str(run_root),
+        "denied_roots": [],
+    }))
+
+    workflow = OnboardingWorkflow(run_root)
+
+    assert workflow.platform_root == platform_root.resolve()
 
 
 def test_assess_resumes_from_artifacts_and_reports_insufficient_evidence(tmp_path: Path) -> None:
