@@ -67,6 +67,8 @@ cd ~/文档/for_robot_dpy/.worktrees/body-aware-robot-agent-mvp/cross-embody-sdk
 conda deactivate 2>/dev/null || true
 source ~/文档/for_robot_dpy/robot_launch/setup.sh
 export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
+export ROS_LOG_DIR=/tmp/ce-onboarding/ros-log
+mkdir -p "$ROS_LOG_DIR"
 
 python3.10 -m cross_embodiment.cli onboard preflight \
   --package-root /tmp/ce-onboarding/weiyi-right-arm-20261015-native-4/hardware-package \
@@ -126,6 +128,8 @@ cd ~/文档/for_robot_dpy/.worktrees/body-aware-robot-agent-mvp/cross-embody-sdk
 conda deactivate 2>/dev/null || true
 source ~/文档/for_robot_dpy/robot_launch/setup.sh
 export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
+export ROS_LOG_DIR=/tmp/ce-onboarding/ros-log
+mkdir -p "$ROS_LOG_DIR"
 
 python3.10 -m cross_embodiment.cli onboard accept-l3 \
   --package-root /tmp/ce-onboarding/weiyi-right-arm-20261015-native-4/hardware-package \
