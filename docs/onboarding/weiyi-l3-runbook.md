@@ -68,18 +68,28 @@ source setup.sh
 ros2 launch robot_bringup dual_arm_hand.launch.py
 ```
 
-Use the existing, operator-verified power and fault-recovery procedure. For a
-normal power-on request and state check, the raw runtime exposes:
+Driver launch and right-arm enable are separate Weiyi lifecycle operations.
+Keep Terminal 1 running. After every driver launch or restart, and before any
+SDK, Agent, Calibration, or L3 motion entry point, run the separate enable
+operation in another terminal:
 
 ```bash
+cd ~/文档/for_robot_dpy/robot_launch
+conda deactivate 2>/dev/null || true
+export ROS_LOCALHOST_ONLY=1
+export ROS_DOMAIN_ID=0
+source setup.sh
+
 ros2 service call /wy_robot1/right_arm_set_power \
   arm_control_interface/srv/SetPower "{power_enable: true}"
 
 timeout 10s ros2 topic echo /wy_robot1/right_arm_state --once
 ```
 
-The state must be fresh, contain seven joint angles, report fault code `0`,
-and report mode `104` before an L3 motion is considered.
+Do not assume that launching the driver enables the arm. The state must be
+fresh, contain seven joint angles, report fault code `0`, and report mode `104`
+before an SDK motion is considered. Mode `101` is not accepted as ready by the
+generated package and must not proceed to authorization.
 
 ## Terminal 2: read-only generated-package preflight
 

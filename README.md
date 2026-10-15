@@ -52,7 +52,20 @@ bash scripts/build_runtime.sh
 bash runtime/scripts/start.sh
 ```
 
-驱动就绪后，在第二个终端通过 Demo 的公共 Robot API 执行任务：
+Weiyi 的 Driver 启动与右臂使能是两个独立生命周期步骤。每次启动或重启
+Driver 后，都必须在第二个终端单独调用 `SetPower`，并确认右臂进入
+`arm_mode: 104` 且 `fault_code: 0`。Driver 启动本身不代表右臂已经使能：
+
+```bash
+source ../ce-hardware-weiyi-dual-o6/runtime/setup.sh
+ros2 service call \
+  /wy_robot1/right_arm_set_power \
+  arm_control_interface/srv/SetPower \
+  "{power_enable: true}"
+timeout 10s ros2 topic echo /wy_robot1/right_arm_state --once
+```
+
+状态确认后，才能通过 Demo 的公共 Robot API 执行任务：
 
 ```bash
 cd ../wy-dual-o6-demo
