@@ -168,6 +168,11 @@ class OnboardingWorkflow:
     def assess(self, scope_path: Path, candidates_path: Path) -> CapabilityCoverage:
         scope_data = yaml.safe_load(scope_path.read_text(encoding="utf-8"))
         candidates = _load_candidates(candidates_path)
+        return self.assess_candidates(scope_data, candidates)
+
+    def assess_candidates(
+        self, scope_data: Mapping[str, Any], candidates: tuple[CapabilityCandidate, ...]
+    ) -> CapabilityCoverage:
         scope = OnboardingScope(
             scope_data["device_id"], tuple(scope_data["capability_ids"]),
             tuple(scope_data["ordered_joints"]), candidates,

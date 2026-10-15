@@ -36,17 +36,31 @@ class CapabilityCoverage:
 
 _REQUIREMENTS = {
     "joint_position_state": (
-        "transport_kind", "endpoint", "interface_type", "value_field", "unit", "ordered_joints"
+        "binding_operation", "transport_kind", "endpoint", "interface_type",
+        "positions_field", "stamp_field", "mode_field", "ready_values", "fault_field",
+        "unit", "ordered_joints", "joint_limits",
     ),
     "joint_position": (
-        "transport_kind", "endpoint", "interface_type", "mode", "target_field",
-        "result_code_field", "result_description_field", "unit", "ordered_joints", "completion",
+        "binding_operation", "transport_kind", "endpoint", "interface_type", "timeout_s",
+        "target_field", "target_unit", "constants", "result_code_field",
+        "result_description_field", "success_code", "unit", "ordered_joints",
+        "state_binding", "arrival_tolerance_rad", "settle_window_s", "completion",
     ),
 }
 
 
 def _supported(key: str, value: Any, records) -> bool:
-    return any(key in record.claims and record.claims[key] == value for record in records)
+    def normalized(item):
+        if isinstance(item, (tuple, list)):
+            return [normalized(child) for child in item]
+        if isinstance(item, dict):
+            return {name: normalized(child) for name, child in item.items()}
+        return item
+    expected = normalized(value)
+    return any(
+        key in record.claims and normalized(record.claims[key]) == expected
+        for record in records
+    )
 
 
 class CapabilityMatcher:

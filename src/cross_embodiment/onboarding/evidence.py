@@ -49,7 +49,15 @@ class EvidenceMatrix:
         values: dict[str, set[str]] = {}
         for record in records:
             for key in sensitive & set(record.claims):
-                values.setdefault(key, set()).add(
-                    json.dumps(record.claims[key], sort_keys=True)
-                )
+                values.setdefault(key, set()).add(json.dumps(
+                    _normalized(record.claims[key]), sort_keys=True
+                ))
         return tuple(sorted(key for key, candidates in values.items() if len(candidates) > 1))
+
+
+def _normalized(value):
+    if isinstance(value, (tuple, list)):
+        return [_normalized(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _normalized(item) for key, item in value.items()}
+    return value
