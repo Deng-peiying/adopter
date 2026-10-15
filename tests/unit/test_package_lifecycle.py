@@ -13,6 +13,7 @@ from cross_embodiment.package.artifact import (
     extract_package_artifact,
     inspect_package_artifact,
 )
+from cross_embodiment.package.lifecycle import PackageLifecycle
 
 
 def _package(root: Path, *, version: str = "1.2.3") -> Path:
@@ -109,3 +110,68 @@ def test_artifact_inspection_and_extraction_reject_tampering_and_unsafe_paths(
             target.writestr(info, data)
     with pytest.raises(PackageError, match="digest mismatch"):
         extract_package_artifact(tampered, tmp_path / "tampered-output")
+
+
+def test_install_records_backends_requirements_and_is_idempotent(tmp_path: Path) -> None:
+    source = _package(tmp_path / "source")
+    artifact = tmp_path / "arm.cepack"
+    built = build_package_artifact(source, artifact)
+    lifecycle = PackageLifecycle(tmp_path / "store")
+
+    first = lifecycle.install(artifact)
+    second = lifecycle.install(artifact)
+
+    assert first == second
+    assert first.package_name == "example/arm"
+    assert first.version == "1.2.3"
+    assert first.package_tree_digest == built.package_tree_digest
+    assert first.artifact_digest.startswith("sha256:")
+    assert first.backends[0]["entrypoint"] == "example_vendor.backend:Adapter"
+    assert first.external_requirements["mapped"]["external_driver"] == "example_arm_driver"
+    assert Path(first.package_root, "package.yaml").is_file()
+
+
+def test_list_and_inspect_support_multiple_versions_and_detect_drift(tmp_path: Path) -> None:
+    lifecycle = PackageLifecycle(tmp_path / "store")
+    for version in ("1.2.3", "2.0.0"):
+        artifact = tmp_path / f"arm-{version}.cepack"
+        build_package_artifact(_package(tmp_path / f"source-{version}", version=version), artifact)
+        lifecycle.install(artifact)
+
+    records = lifecycle.list()
+    assert [(item.package_name, item.version) for item in records] == [
+        ("example/arm", "1.2.3"),
+        ("example/arm", "2.0.0"),
+    ]
+    inspected = lifecycle.inspect("example/arm@1.2.3")
+    assert inspected.version == "1.2.3"
+
+    Path(inspected.package_root, "unexpected.txt").write_text("drift", encoding="utf-8")
+    with pytest.raises(PackageError, match="digest"):
+        lifecycle.inspect("example/arm@1.2.3")
+
+
+def test_install_rejects_different_content_for_existing_name_version(tmp_path: Path) -> None:
+    lifecycle = PackageLifecycle(tmp_path / "store")
+    first_source = _package(tmp_path / "source-a")
+    first = tmp_path / "first.cepack"
+    build_package_artifact(first_source, first)
+    lifecycle.install(first)
+
+    second_source = _package(tmp_path / "source-b")
+    mapping = second_source / "config/mapping.yaml"
+    mapping.write_text("schema_version: mapping/v0.1\nvariant: b\n", encoding="utf-8")
+    digest = hashlib.sha256(mapping.read_bytes()).hexdigest()
+    manifest = second_source / "package.yaml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(
+            manifest.read_text(encoding="utf-8").split("digest: sha256:", 1)[1].split("}", 1)[0],
+            digest,
+        ),
+        encoding="utf-8",
+    )
+    second = tmp_path / "second.cepack"
+    build_package_artifact(second_source, second)
+
+    with pytest.raises(PackageError, match="immutable"):
+        lifecycle.install(second)
