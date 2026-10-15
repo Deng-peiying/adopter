@@ -104,3 +104,23 @@ Native 路径需要 ROS 2 Humble、主机依赖、正确配置的 CAN 接口及�
 两个 `Robot.move_joints()` 均获得 ROS Action 成功终态和实测到位确认。完整证据
 保存在 `onboarding-evidence/weiyi-right-arm-20261015-gate-e/`。该结论只覆盖
 Weiyi 右臂的 ROS2 `joint_position_state` 与 `joint_position`。
+
+## Hardware Package 生命周期
+
+协议无关的 Package 生命周期使用 `ce package`：
+
+```bash
+ce package build --package-root ./hardware-package-runtime --output ./robot.cepack
+ce package install --artifact ./robot.cepack
+ce package list --json
+ce package inspect vendor/model@1.0.0 --json
+ce package activate vendor/model@1.0.0 --instance ./instance.yaml
+ce package use --instance lab/robot-01 --json
+ce package deactivate --instance lab/robot-01
+ce package uninstall vendor/model@1.0.0
+```
+
+这些命令只处理制品、Registry 记录和 Robot Instance 绑定；不会连接、启动、
+使能机器人，也不会发送动作。Backend 和外部 Driver 依赖会被记录，但卸载
+Hardware Package 不会删除共享厂商运行环境。完整说明见
+[`docs/package-lifecycle.md`](docs/package-lifecycle.md)。
