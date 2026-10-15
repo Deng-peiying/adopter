@@ -21,12 +21,12 @@ def _run(tool: str, arguments: list[str]) -> tuple[str, str]:
     return ("ok" if completed.returncode == 0 else f"exit_{completed.returncode}", completed.stdout + completed.stderr)
 
 
-def _evidence(path: Path, root: Path, kind: str, claims: dict[str, object], boundary: str) -> EvidenceRecord:
+def _evidence(path: Path, root: Path, root_id: str, kind: str, claims: dict[str, object], boundary: str) -> EvidenceRecord:
     relative = path.relative_to(root)
     digest = sha256(path.read_bytes()).hexdigest()
     return EvidenceRecord(
-        evidence_id=f"evidence:native:{relative.as_posix()}:{digest[:12]}",
-        source_asset_ids=(f"asset:{relative.as_posix()}:{digest[:12]}",),
+        evidence_id=f"evidence:native:{root_id}:{relative.as_posix()}:{digest[:12]}",
+        source_asset_ids=(f"asset:{root_id}:{relative.as_posix()}:{digest[:12]}",),
         source_path=relative, claim_type=kind, claims=claims,
         provenance={"extractor": "native-static", "source_sha256": digest},
         confidence_boundary=boundary, level=EvidenceLevel.OBSERVED,
@@ -48,7 +48,7 @@ class NativeExtractor:
                 includes = re.findall(r'^\s*#\s*include\s*[<"]([^>"]+)[>"]', text, re.MULTILINE)
                 missing = [name for name in includes if not (path.parent / name).exists() and "/" not in name]
                 symbols = re.findall(r"\b(?:void|bool|int|float|double|class|struct)\s+([A-Za-z_]\w*)", text)
-                records.append(_evidence(path, root, "native_header", {"includes": includes, "missing_includes": sorted(missing), "declared_symbols": sorted(set(symbols))}, "header_declaration_only"))
+                records.append(_evidence(path, root, context.root_id, "native_header", {"includes": includes, "missing_includes": sorted(missing), "declared_symbols": sorted(set(symbols))}, "header_declaration_only"))
                 continue
             magic = path.read_bytes()[:4]
             if magic != b"\x7fELF":
@@ -67,7 +67,7 @@ class NativeExtractor:
                 parts = line.split()
                 if len(parts) >= 3:
                     symbols.append(" ".join(parts[2:]))
-            records.append(_evidence(path, root, "native_binary", {
+            records.append(_evidence(path, root, context.root_id, "native_binary", {
                 "format": "ELF", "architecture": architecture,
                 "dependencies": sorted(set(dependencies)),
                 "exported_symbols": sorted(set(symbols)),

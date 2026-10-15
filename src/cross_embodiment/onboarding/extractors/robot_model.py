@@ -44,8 +44,8 @@ class RobotModelExtractor:
             unresolved = sorted(set(re.findall(r"\$\{([^}]+)\}", text)))
             digest = sha256(path.read_bytes()).hexdigest()
             records.append(EvidenceRecord(
-                evidence_id=f"evidence:model:{relative.as_posix()}:{digest[:12]}",
-                source_asset_ids=(f"asset:{relative.as_posix()}:{digest[:12]}",), source_path=relative,
+                evidence_id=f"evidence:model:{context.root_id}:{relative.as_posix()}:{digest[:12]}",
+                source_asset_ids=(f"asset:{context.root_id}:{relative.as_posix()}:{digest[:12]}",), source_path=relative,
                 claim_type="robot_model",
                 claims={"format": path.suffix.lower()[1:], "name": root.get("name"), "joints": joints,
                         "joint_order": [item["name"] for item in joints],

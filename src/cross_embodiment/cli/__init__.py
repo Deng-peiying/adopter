@@ -13,6 +13,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from ..errors import CrossEmbodimentError, PackageError
 from ..driver.backend import load_backend_entrypoint
 from ..hardware.instance import RobotInstance
@@ -331,12 +333,74 @@ def _build_parser() -> argparse.ArgumentParser:
     host.add_argument("--robot")
     host.add_argument("--control-enabled", action="store_true")
     host.add_argument("--registry", type=Path)
+    onboard = sub.add_parser("onboard", help="inspect vendor assets and generate a Hardware Package")
+    phases = onboard.add_subparsers(dest="onboard_phase", required=True)
+    inspect = phases.add_parser("inspect")
+    inspect.add_argument("--vendor-root", type=Path, action="append", required=True)
+    inspect.add_argument("--platform-root", type=Path, required=True)
+    inspect.add_argument("--run-root", type=Path, required=True)
+    inspect.add_argument("--denied-root", type=Path, action="append", default=[])
+    inspect.add_argument("--json", action="store_true")
+    assess = phases.add_parser("assess")
+    assess.add_argument("--run-root", type=Path, required=True)
+    assess.add_argument("--scope", type=Path, required=True)
+    assess.add_argument("--candidates", type=Path, required=True)
+    assess.add_argument("--json", action="store_true")
+    generate = phases.add_parser("generate")
+    generate.add_argument("--run-root", type=Path, required=True)
+    generate.add_argument("--identity", type=Path, required=True)
+    generate.add_argument("--json", action="store_true")
+    for name in ("validate", "report"):
+        phase = phases.add_parser(name)
+        phase.add_argument("--run-root", type=Path, required=True)
+        phase.add_argument("--json", action="store_true")
     return parser
+
+
+def _emit_onboarding(value: dict[str, Any], as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(value, sort_keys=True))
+    else:
+        print(yaml.safe_dump(value, sort_keys=False).rstrip())
+
+
+def _onboard(args) -> int:
+    from ..onboarding.workflow import AssetInsufficiency, ConformanceFailure, OnboardingWorkflow
+
+    workflow = OnboardingWorkflow(
+        args.run_root,
+        getattr(args, "platform_root", None),
+    )
+    if args.onboard_phase == "inspect":
+        result = workflow.inspect(tuple(args.vendor_root), tuple(args.denied_root))
+    elif args.onboard_phase == "assess":
+        coverage = workflow.assess(args.scope, args.candidates)
+        complete = all(item.status in {"native", "derived"} and not item.conflicts for item in coverage.assessments)
+        result = {"phase": "assess", "complete": complete, "assessments": [
+            {"capability_id": item.capability_id, "status": item.status, "conflicts": list(item.conflicts)}
+            for item in coverage.assessments
+        ], "motion_sent": False}
+        _emit_onboarding(result, args.json)
+        return 0 if complete else AssetInsufficiency.exit_code
+    elif args.onboard_phase == "generate":
+        generated = workflow.generate(args.identity)
+        result = {"phase": "generate", "package_root": str(generated.root), "motion_sent": False}
+    elif args.onboard_phase == "validate":
+        report = workflow.validate()
+        result = {"phase": "validate", "passed": report.passed, "checks": list(report.checks), "failures": list(report.failures), "resolved_package_root": str(report.resolved_package_root), "resolved_mapping_path": str(report.resolved_mapping_path) if report.resolved_mapping_path else None, "motion_sent": False}
+        _emit_onboarding(result, args.json)
+        return 0 if report.passed else ConformanceFailure.exit_code
+    else:
+        result = workflow.report()
+    _emit_onboarding(result, args.json)
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     try:
+        if args.command == "onboard":
+            return _onboard(args)
         if args.command == "validate":
             _validate(args.project, args.registry)
             print(f"valid: {args.project}")
@@ -370,6 +434,12 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     except (CrossEmbodimentError, OSError, ValueError, KeyError) as exc:
         print(f"ce: error: {exc}", file=sys.stderr)
+        try:
+            from ..onboarding.workflow import OnboardingWorkflowError
+            if isinstance(exc, OnboardingWorkflowError):
+                return exc.exit_code
+        except ImportError:
+            pass
         return 2
 
 

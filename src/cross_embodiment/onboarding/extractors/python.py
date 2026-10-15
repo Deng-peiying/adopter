@@ -38,8 +38,8 @@ class PythonExtractor:
                     classes.append({"name": node.name, "methods": methods})
             digest = sha256(content).hexdigest()
             records.append(EvidenceRecord(
-                evidence_id=f"evidence:python:{relative.as_posix()}:{digest[:12]}",
-                source_asset_ids=(f"asset:{relative.as_posix()}:{digest[:12]}",),
+                evidence_id=f"evidence:python:{context.root_id}:{relative.as_posix()}:{digest[:12]}",
+                source_asset_ids=(f"asset:{context.root_id}:{relative.as_posix()}:{digest[:12]}",),
                 source_path=relative,
                 claim_type="python_module",
                 claims={"module": relative.with_suffix("").as_posix().replace("/", "."), "classes": classes, "functions": functions, "imports": sorted(imports)},

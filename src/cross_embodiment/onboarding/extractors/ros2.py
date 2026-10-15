@@ -26,13 +26,13 @@ def _fields(text: str) -> list[dict[str, str]]:
     return result
 
 
-def _record(path: Path, root: Path, claim_type: str, claims: dict[str, Any], boundary: str, level: EvidenceLevel = EvidenceLevel.DECLARED) -> EvidenceRecord:
+def _record(path: Path, root: Path, root_id: str, claim_type: str, claims: dict[str, Any], boundary: str, level: EvidenceLevel = EvidenceLevel.DECLARED) -> EvidenceRecord:
     relative = path.relative_to(root)
     digest = sha256(path.read_bytes()).hexdigest()
     claim_digest = sha256(json.dumps(claims, sort_keys=True).encode()).hexdigest()[:12]
     return EvidenceRecord(
-        evidence_id=f"evidence:ros2:{relative.as_posix()}:{claim_digest}",
-        source_asset_ids=(f"asset:{relative.as_posix()}:{digest[:12]}",),
+        evidence_id=f"evidence:ros2:{root_id}:{relative.as_posix()}:{claim_digest}",
+        source_asset_ids=(f"asset:{root_id}:{relative.as_posix()}:{digest[:12]}",),
         source_path=relative,
         claim_type=claim_type,
         claims=claims,
@@ -63,7 +63,7 @@ class Ros2Extractor:
             suffix = path.suffix.lower()
             if path.name == "package.xml":
                 tree = ET.parse(path).getroot()
-                records.append(_record(path, root, "ros2_package", {
+                records.append(_record(path, root, context.root_id, "ros2_package", {
                     "package": (tree.findtext("name") or "").strip(),
                     "version": (tree.findtext("version") or "").strip(),
                     "build_type": (tree.findtext("export/build_type") or "unknown").strip(),
@@ -84,9 +84,9 @@ class Ros2Extractor:
                     claims["goal_fields"] = _fields(parts[0])
                     claims["result_fields"] = _fields(parts[1]) if len(parts) > 1 else []
                     claims["feedback_fields"] = _fields(parts[2]) if len(parts) > 2 else []
-                records.append(_record(path, root, "ros2_interface_definition", claims, "type_definition_only"))
+                records.append(_record(path, root, context.root_id, "ros2_interface_definition", claims, "type_definition_only"))
             elif suffix == ".idl":
-                records.append(_record(path, root, "ros2_interface_definition", {
+                records.append(_record(path, root, context.root_id, "ros2_interface_definition", {
                     "interface": path.stem,
                     "interface_kind": "idl",
                     "text_sha256": sha256(path.read_bytes()).hexdigest(),
@@ -108,7 +108,7 @@ class Ros2Extractor:
                     elif name == "Node":
                         nodes.append({key: keywords[key] for key in ("package", "executable", "namespace") if key in keywords})
                 namespaces = sorted({f"/{str(n['namespace']).strip('/')}" for n in nodes if n.get("namespace")})
-                records.append(_record(path, root, "ros2_launch_definition", {
+                records.append(_record(path, root, context.root_id, "ros2_launch_definition", {
                     "launch_file": relative.as_posix(),
                     "arguments": arguments,
                     "nodes": nodes,
@@ -118,7 +118,7 @@ class Ros2Extractor:
                 content = path.read_bytes()[:4 * 1024 * 1024]
                 for token in sorted(set(re.findall(rb"/[A-Za-z0-9_/-]+_(?:action|state|service)", content))):
                     value = token.decode("ascii", errors="ignore")
-                    records.append(_record(path, root, "ros2_endpoint_candidate", {
+                    records.append(_record(path, root, context.root_id, "ros2_endpoint_candidate", {
                         "token": value,
                         "fully_qualified_confirmed": False,
                     }, "binary_string_candidate_only", EvidenceLevel.OBSERVED))
