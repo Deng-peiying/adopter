@@ -24,7 +24,7 @@ ACTIVATION_SCHEMA = "hardware-package-activation/v0.1"
 
 def _package_parts(name: str) -> tuple[str, ...]:
     value = PurePosixPath(name)
-    if value.is_absolute() or len(value.parts) < 2 or any(
+    if value.is_absolute() or not value.parts or any(
         part in ("", ".", "..") for part in value.parts
     ):
         raise PackageError(f"Invalid Hardware Package name: {name}")

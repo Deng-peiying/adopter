@@ -16,7 +16,7 @@ from cross_embodiment.package.artifact import (
 from cross_embodiment.package.lifecycle import PackageLifecycle
 
 
-def _package(root: Path, *, version: str = "1.2.3") -> Path:
+def _package(root: Path, *, version: str = "1.2.3", name: str = "example/arm") -> Path:
     root.mkdir(parents=True, exist_ok=True)
     config = root / "config"
     config.mkdir()
@@ -29,7 +29,7 @@ def _package(root: Path, *, version: str = "1.2.3") -> Path:
     )
     (root / "package.yaml").write_text(
         f"""schema_version: hardware-package/v0.1
-package: {{name: example/arm, version: {version}, vendor: Example, model: arm, type: robot}}
+package: {{name: {name}, version: {version}, vendor: Example, model: arm, type: robot}}
 embodiment_manifest: embodiment.yaml
 assets:
   interface_mapping:
@@ -135,6 +135,17 @@ def test_install_records_backends_requirements_and_is_idempotent(tmp_path: Path)
     assert first.backends[0]["entrypoint"] == "example_vendor.backend:Adapter"
     assert first.external_requirements["mapped"]["external_driver"] == "example_arm_driver"
     assert Path(first.package_root, "package.yaml").is_file()
+
+
+def test_install_preserves_existing_single_component_package_names(tmp_path: Path) -> None:
+    source = _package(tmp_path / "source", name="standalone_arm")
+    artifact = tmp_path / "standalone.cepack"
+    build_package_artifact(source, artifact)
+
+    installed = PackageLifecycle(tmp_path / "store").install(artifact)
+
+    assert installed.package_name == "standalone_arm"
+    assert Path(installed.package_root).parts[-2:] == ("standalone_arm", "1.2.3")
 
 
 def test_list_and_inspect_support_multiple_versions_and_detect_drift(tmp_path: Path) -> None:
