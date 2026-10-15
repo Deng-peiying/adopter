@@ -254,7 +254,7 @@ def test_l3_acceptance_cli_requires_exact_interactive_confirmation(monkeypatch, 
     assert code == 2
     assert calls == []
 
-    monkeypatch.setattr("builtins.input", lambda prompt: "EXECUTE L3")
+    monkeypatch.setattr("builtins.input", lambda prompt: "  EXECUTE L3  ")
     code = main([
         "onboard", "accept-l3", "--package-root", str(tmp_path / "generated"),
         "--device", "right_arm", "--target", str(target_path), "--operator", "robot",

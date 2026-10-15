@@ -511,7 +511,7 @@ def _onboard(args) -> int:
             "operations": 2,
         }, sort_keys=False).rstrip())
         confirmation = input("Type EXECUTE L3 to authorize this probe and return; anything else cancels: ")
-        if confirmation != "EXECUTE L3":
+        if confirmation.strip() != "EXECUTE L3":
             print("L3 acceptance cancelled; no motion command sent.")
             return 2
         record = execute_generated_package_round_trip(
