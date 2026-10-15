@@ -67,10 +67,13 @@ class NativeExtractor:
                 parts = line.split()
                 if len(parts) >= 3:
                     symbols.append(" ".join(parts[2:]))
+            unique_symbols = sorted(set(symbols))
             records.append(_evidence(path, root, context.root_id, "native_binary", {
                 "format": "ELF", "architecture": architecture,
                 "dependencies": sorted(set(dependencies)),
-                "exported_symbols": sorted(set(symbols)),
+                "exported_symbols": unique_symbols[:200],
+                "exported_symbol_count": len(unique_symbols),
+                "exported_symbols_truncated": len(unique_symbols) > 200,
                 "tool_status": {"file": file_status, "readelf": readelf_status, "nm": nm_status},
             }, "binary_metadata_only"))
         return records

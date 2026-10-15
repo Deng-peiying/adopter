@@ -103,3 +103,74 @@ def test_weiyi_shaped_extra_interfaces_remain_discovered_unmapped() -> None:
     scope = OnboardingScope("right_arm", ("joint_position_state", "joint_position"), JOINTS, (state_candidate("state"), move_candidate("move")))
     coverage = CapabilityMatcher().assess(CATALOG, matrix(state, move, *extras), scope)
     assert set(coverage.discovered_unmapped_evidence_ids) == {"power", "stop", "rt"}
+
+
+def test_structural_interface_paths_support_nested_mapping_fields() -> None:
+    state_usage = ev(
+        "state-usage", "ros2_subscription_usage",
+        binding_operation="joint_state", transport_kind="ros2_subscription",
+        endpoint="/wy/right_arm_state", interface_type="demo/msg/ArmState",
+        positions_field="joint_angles", mode_field="arm_mode", ready_values=[104],
+        unit="radian", ordered_joints=JOINTS, joint_limits=LIMITS,
+    )
+    state_type = ev(
+        "state-type", "ros2_interface_definition",
+        field_paths=["header.stamp", "joint_angles", "arm_mode", "arm_fault.fault_code"],
+    )
+    move_usage = ev(
+        "move-usage", "ros2_action_usage",
+        **{key: value for key, value in dict(move_candidate("move-usage").proposed_semantics).items()
+           if key != "result_description_field"},
+    )
+    move_type = ev(
+        "move-type", "ros2_interface_definition",
+        result_field_paths=["result.code", "result.description"],
+    )
+    candidate_state = state_candidate("state-usage", "state-type")
+    candidate_move = move_candidate("move-usage", "move-type")
+    scope = OnboardingScope(
+        "right_arm", ("joint_position_state", "joint_position"), JOINTS,
+        (candidate_state, candidate_move),
+    )
+    coverage = CapabilityMatcher().assess(
+        CATALOG, matrix(state_usage, state_type, move_usage, move_type), scope,
+    )
+    assert coverage.get("joint_position_state").status == "native"
+    assert coverage.get("joint_position").status == "native"
+
+
+def test_platform_contract_supports_operation_canonical_order_and_state_binding() -> None:
+    state_semantics = dict(state_candidate("vendor-state").proposed_semantics)
+    move_semantics = dict(move_candidate("vendor-move").proposed_semantics)
+    platform_fields = {"binding_operation", "ordered_joints"}
+    state_evidence = ev(
+        "vendor-state", "vendor_binding",
+        **{key: value for key, value in state_semantics.items() if key not in platform_fields},
+    )
+    move_evidence = ev(
+        "vendor-move", "vendor_binding",
+        **{key: value for key, value in move_semantics.items()
+           if key not in platform_fields | {"state_binding"}},
+    )
+    scope = OnboardingScope(
+        "right_arm", ("joint_position_state", "joint_position"), JOINTS,
+        (state_candidate("vendor-state"), move_candidate("vendor-move")),
+    )
+    coverage = CapabilityMatcher().assess(CATALOG, matrix(state_evidence, move_evidence), scope)
+    assert coverage.get("joint_position_state").status == "native"
+    assert coverage.get("joint_position").status == "native"
+
+
+def test_target_unit_can_be_supported_by_vendor_joint_unit_evidence() -> None:
+    semantics = dict(move_candidate("move", "unit").proposed_semantics)
+    move = ev(
+        "move", "ros2_action_usage",
+        **{key: value for key, value in semantics.items() if key != "target_unit"},
+    )
+    unit = ev("unit", "robot_joint_configuration", unit="radian")
+    scope = OnboardingScope(
+        "right_arm", ("joint_position",), JOINTS,
+        (move_candidate("move", "unit"),),
+    )
+    assessment = CapabilityMatcher().assess(CATALOG, matrix(move, unit), scope).get("joint_position")
+    assert assessment.status == "native"

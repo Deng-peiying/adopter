@@ -65,3 +65,45 @@ def test_graph_snapshot_is_read_only_runtime_evidence(tmp_path: Path) -> None:
     assert {item.claims["endpoint_kind"] for item in evidence if "endpoint_kind" in item.claims} == {"topic", "service", "action"}
     assert all(item.level is EvidenceLevel.RUNTIME_READ for item in evidence)
     assert all(item.level is not EvidenceLevel.HARDWARE_MOTION for item in evidence)
+
+
+def test_extracts_ros2_python_usage_without_importing_vendor_code() -> None:
+    records = _evidence()
+    state = next(item for item in records if item.claim_type == "ros2_subscription_usage")
+    assert state.claims == {
+        "transport_kind": "ros2_subscription",
+        "endpoint": "/wy/right_arm_state",
+        "interface_type": "demo_arm/msg/ArmState",
+        "positions_field": "joint_angles",
+        "mode_field": "arm_mode",
+    }
+    move = next(item for item in records if item.claim_type == "ros2_action_usage")
+    assert move.claims["endpoint"] == "/wy/right_arm_move_action"
+    assert move.claims["interface_type"] == "demo_arm/action/ArmMove"
+    assert move.claims["target_field"] == "joint_angles"
+    assert move.claims["constants"] == {"move_type": "MoveJ", "cart_pose": [0.0] * 6}
+    assert move.claims["result_code_field"] == "error_code.value"
+    assert move.claims["success_code"] == 0
+    assert move.claims["timeout_s"] == 20.0
+    arrival = next(item for item in records if item.claim_type == "joint_arrival_policy")
+    assert arrival.claims == {
+        "arrival_tolerance_rad": 0.03,
+        "settle_window_s": 0.2,
+        "completion": ["terminal_result", "measured_arrival"],
+    }
+
+
+def test_extracts_nested_interface_paths_and_joint_configuration() -> None:
+    records = _evidence()
+    state = next(item for item in records if item.claims.get("interface") == "ArmState")
+    assert "header.stamp" in state.claims["field_paths"]
+    assert "arm_fault.fault_code" in state.claims["field_paths"]
+    move = next(item for item in records if item.claims.get("interface") == "ArmMove")
+    assert "error_code.value" in move.claims["result_field_paths"]
+    config = next(item for item in records if item.claim_type == "robot_joint_configuration")
+    assert config.claims == {
+        "device": "right_arm",
+        "vendor_joint_order": ["right_1", "right_2"],
+        "joint_limits": [[-2.0, 2.0], [-1.0, 1.0]],
+        "unit": "radian",
+    }

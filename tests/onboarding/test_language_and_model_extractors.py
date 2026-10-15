@@ -40,6 +40,23 @@ def test_native_extractor_reports_headers_missing_includes_and_elf_platform(tmp_
     assert "tool_status" in binary.claims
 
 
+def test_native_symbol_evidence_is_bounded_but_keeps_total(tmp_path: Path, monkeypatch) -> None:
+    binary_path = tmp_path / "huge.so"
+    binary_path.write_bytes(b"\x7fELF")
+
+    def fake_run(tool, arguments):
+        if tool == "file":
+            return "ok", "ELF 64-bit LSB shared object, x86-64"
+        if tool == "readelf":
+            return "ok", ""
+        return "ok", "\n".join(f"0000 T symbol_{i}" for i in range(500))
+
+    monkeypatch.setattr("cross_embodiment.onboarding.extractors.native._run", fake_run)
+    claim = NativeExtractor().scan_files(_context(tmp_path))[0].claims
+    assert claim["exported_symbol_count"] == 500
+    assert len(claim["exported_symbols"]) == 200
+
+
 def test_urdf_extractor_reports_chain_as_model_evidence(tmp_path: Path) -> None:
     (tmp_path / "arm.urdf").write_text('''
 <robot name="arm">

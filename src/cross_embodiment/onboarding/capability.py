@@ -57,10 +57,20 @@ def _supported(key: str, value: Any, records) -> bool:
             return {name: normalized(child) for name, child in item.items()}
         return item
     expected = normalized(value)
-    return any(
-        key in record.claims and normalized(record.claims[key]) == expected
-        for record in records
-    )
+    for record in records:
+        if key in record.claims and normalized(record.claims[key]) == expected:
+            return True
+        if key == "target_unit" and normalized(record.claims.get("unit")) == expected:
+            return True
+        if key.endswith("_field"):
+            for claim_name in (
+                "field_paths", "goal_field_paths", "result_field_paths",
+                "request_field_paths", "response_field_paths", "dynamic_goal_fields",
+            ):
+                paths = normalized(record.claims.get(claim_name, ()))
+                if isinstance(paths, list) and expected in paths:
+                    return True
+    return False
 
 
 class CapabilityMatcher:
@@ -80,7 +90,7 @@ class CapabilityMatcher:
         assessments: list[CapabilityAssessment] = []
         used_evidence: set[str] = set()
         for capability_id in scope.capability_ids:
-            catalog.get(capability_id)
+            definition = catalog.get(capability_id)
             candidate = candidate_by_capability.get(capability_id)
             if candidate:
                 records = matrix.select(candidate.evidence_ids)
@@ -90,6 +100,12 @@ class CapabilityMatcher:
                 for field in _REQUIREMENTS.get(capability_id, ()):
                     if field not in candidate.proposed_semantics:
                         missing.append(MissingRequirement(field, "candidate omitted required semantic"))
+                    elif field == "binding_operation" and candidate.proposed_semantics[field] in definition.binding_operations:
+                        continue
+                    elif field == "ordered_joints" and tuple(candidate.proposed_semantics[field]) == scope.ordered_joints:
+                        continue
+                    elif field == "state_binding" and candidate.proposed_semantics[field] == f"{scope.device_id}_joint_state":
+                        continue
                     elif not _supported(field, candidate.proposed_semantics[field], records):
                         missing.append(MissingRequirement(field, "no linked evidence supports proposed value"))
                 for field in conflicts:
