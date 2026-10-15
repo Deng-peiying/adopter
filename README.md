@@ -91,6 +91,9 @@ Native 路径需要 ROS 2 Humble、主机依赖、正确配置的 CAN 接口及�
 - [证据、Capability 与验证等级策略](docs/onboarding/evidence-policy.md)
 - [Weiyi 独立 L1/L2 结果](docs/onboarding/weiyi-independent-acceptance.md)
 - [Weiyi 新生成 Package 的 L3 三终端手册](docs/onboarding/weiyi-l3-runbook.md)
+- [Gate D→E 端到端复盘与冻结](docs/onboarding/end-to-end-freeze-2026-10-16.md)
+- [新厂商首次接入手册](docs/onboarding/new-vendor-runbook.md)
+- [Weiyi 右臂 Reference Onboarding Case v0.1](docs/onboarding/reference-weiyi-dual-o6-right-arm-v0.1.md)
 
 当前自动生成范围仅为 Weiyi 右臂 `joint_position_state` 和
 `joint_position`，当前 Backend 只支持 ROS2 subscription/action。L1/L2 不发送
