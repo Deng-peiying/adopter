@@ -264,3 +264,46 @@ def test_l3_acceptance_cli_requires_exact_interactive_confirmation(monkeypatch, 
     assert calls[0][2] == target
     assert calls[0][3] == {"operator": "robot", "authorized": True}
     assert "L3 acceptance preview" in capsys.readouterr().out
+
+
+def test_l3_acceptance_cli_rejects_not_ready_before_asking_for_authorization(
+    monkeypatch, tmp_path: Path, capsys,
+) -> None:
+    target_path = tmp_path / "target.yaml"
+    target = {f"arm.right.joint.{index}": 0.0 for index in range(7)}
+    target_path.write_text(yaml.safe_dump({"positions": target}), encoding="utf-8")
+
+    class Preview:
+        package_root = tmp_path / "generated"
+        package_tree_sha256 = "a" * 64
+        mapping_path = tmp_path / "generated" / "config" / "mapping.yaml"
+        mapping_sha256 = "b" * 64
+        backend_id = "ros2_mapped"
+        backend_entrypoint = "cross_embodiment.driver.ros2_mapped:MappedRos2Adapter"
+        state_sample = {
+            "status": "not_ready",
+            "positions": target,
+            "details": {"backend_mode": 101, "backend_fault_code": 0},
+        }
+
+    monkeypatch.setattr(
+        "cross_embodiment.onboarding.l3.preflight_generated_package",
+        lambda *args: Preview(),
+    )
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda prompt: (_ for _ in ()).throw(
+            AssertionError("authorization prompt must not be shown")
+        ),
+    )
+
+    code = main([
+        "onboard", "accept-l3",
+        "--package-root", str(tmp_path / "generated"),
+        "--device", "right_arm",
+        "--target", str(target_path),
+        "--operator", "robot",
+    ])
+
+    assert code == 2
+    assert "not ready (mode=101" in capsys.readouterr().err

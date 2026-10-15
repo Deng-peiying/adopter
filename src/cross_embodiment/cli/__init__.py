@@ -488,6 +488,14 @@ def _onboard(args) -> int:
             raise ValueError("L3 target file must contain a non-empty positions mapping")
         positions = {str(name): float(value) for name, value in positions.items()}
         preview = preflight_generated_package(args.package_root, args.device)
+        if preview.state_sample.get("status") != "ready":
+            details = preview.state_sample.get("details") or {}
+            raise ValueError(
+                f"Device {args.device} is not ready "
+                f"(mode={details.get('backend_mode')}, "
+                f"fault_code={details.get('backend_fault_code')}); "
+                "no authorization requested and no motion sent"
+            )
         print("L3 acceptance preview:")
         print(yaml.safe_dump({
             "package_root": str(preview.package_root),
