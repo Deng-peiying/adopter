@@ -261,6 +261,100 @@ def test_agent_can_review_deterministic_candidates_without_retyping_fields(
     assert all("proposed_semantics" not in item.arguments for item in accepted)
 
 
+def test_policy_gap_retains_evidenced_deterministic_interface_mapping(
+    tmp_path: Path,
+) -> None:
+    """Catch the real Gate D failure: a policy gap must not discard mapping."""
+    workflow, candidates, identity_path = prepare_workflow(tmp_path)
+    move = dict(candidates[1].proposed_semantics)
+    for field in ("timeout_s", "arrival_tolerance_rad", "settle_window_s"):
+        move.pop(field)
+    workflow.run_root.joinpath("deterministic-candidates.yaml").write_text(
+        yaml.safe_dump({
+            "schema_version": "capability-candidates/v0.1",
+            "source": "deterministic_normalized_evidence",
+            "candidates": [
+                {
+                    "capability_id": "joint_position_state",
+                    "evidence_ids": ["state-evidence"],
+                    "proposed_semantics": dict(candidates[0].proposed_semantics),
+                },
+                {
+                    "capability_id": "joint_position",
+                    "evidence_ids": ["move-evidence"],
+                    "proposed_semantics": move,
+                },
+            ],
+        }, sort_keys=False),
+        encoding="utf-8",
+    )
+    provider = ScriptedProvider([
+        ProviderTurn(None, None, (
+            call("accept-state", "accept_deterministic_candidate", {
+                "capability_id": "joint_position_state",
+                "evidence_ids": ["state-evidence"],
+                "reason": "subscription evidence maps canonical joint state",
+            }),
+        )),
+        ProviderTurn(None, None, (
+            call("move-policy-gap", "record_conclusion", {
+                "capability_id": "joint_position",
+                "status": "gap",
+                "evidence_ids": ["move-evidence"],
+                "missing_fields": [
+                    "timeout_s", "arrival_tolerance_rad", "settle_window_s",
+                ],
+                "reason": (
+                    "the action interface is mapped, while runtime completion "
+                    "policy remains unresolved"
+                ),
+            }),
+        )),
+    ])
+    goal = OnboardingGoal(
+        "right_arm", ("joint_position_state", "joint_position"),
+        tuple(f"arm.right.joint.{i}" for i in range(7)), identity_path,
+    )
+
+    result = OnboardingAgent(provider).run(goal, workflow)
+
+    assert result.completed
+    assert result.interface_mapped
+    assert result.candidate_generated
+    assert result.package_status == "candidate"
+    assert result.candidate_conformance_passed
+    assert not result.completion_policy_resolved
+    assert not result.live_execution_ready
+    assert result.package_root is not None
+    move_binding = yaml.safe_load(
+        (result.package_root / "config/right_arm_ros2_mapping.candidate.yaml")
+        .read_text(encoding="utf-8")
+    )["bindings"]["right_arm_joint_position"]
+    assert move_binding["interface_mapped"] is True
+    assert move_binding["completion_policy"] == {
+        "status": "unresolved",
+        "state_binding": "right_arm_joint_state",
+        "completion": ["terminal_result", "measured_arrival"],
+        "missing_fields": [
+            "arrival_tolerance_rad", "settle_window_s", "timeout_s",
+        ],
+    }
+    retained = next(
+        item for item in result.tool_trace
+        if item.call_id == "move-policy-gap"
+    )
+    assert retained.result["interface_mapping_retained"] is True
+    saved = json.loads(
+        (workflow.run_root / "agent-capability-decisions.json")
+        .read_text(encoding="utf-8")
+    )
+    assert saved["interface_mapped"] is True
+    assert saved["candidate_generated"] is True
+    assert saved["candidate_conformance_passed"] is True
+    assert saved["completion_policy_resolved"] is False
+    assert saved["live_execution_ready"] is False
+
+
 def test_agent_records_terminal_batch_results_without_another_model_request(tmp_path: Path) -> None:
     workflow, candidates, identity_path = prepare_workflow(tmp_path)
     provider = ScriptedProvider([

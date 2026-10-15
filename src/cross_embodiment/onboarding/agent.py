@@ -64,7 +64,11 @@ class OnboardingRunResult:
     package_root: Path | None
     conformance_passed: bool
     package_status: str
+    interface_mapped: bool
+    candidate_generated: bool
     candidate_conformance_passed: bool
+    completion_policy_resolved: bool
+    live_execution_ready: bool
     decisions: tuple[CapabilityDecision, ...]
     rejections: tuple[AgentRejection, ...]
     tool_trace: tuple[ToolTrace, ...]
@@ -402,6 +406,36 @@ class OnboardingAgent:
                     ):
                         raise ValueError("gap evidence is unrelated to the capability contract")
                     candidate = candidates.get(capability_id)
+                    interface_mapping_retained = False
+                    if candidate is None:
+                        deterministic = deterministic_by_capability.get(capability_id)
+                        if deterministic is not None:
+                            deterministic, _ = normalize_candidate(
+                                catalog, matrix, deterministic, goal.device_id,
+                            )
+                            deterministic_assessment = CapabilityMatcher().assess(
+                                catalog,
+                                matrix,
+                                OnboardingScope(
+                                    goal.device_id,
+                                    (capability_id,),
+                                    goal.ordered_joints,
+                                    (deterministic,),
+                                ),
+                            ).get(capability_id)
+                            unresolved_policy = {
+                                item.field for item in deterministic_assessment.missing
+                                if item.field in set(execution_policy_fields(capability_id))
+                            }
+                            if (
+                                deterministic_assessment.mapping_complete
+                                and not deterministic_assessment.conflicts
+                                and unresolved_policy
+                                and set(missing_fields) == unresolved_policy
+                            ):
+                                candidates[capability_id] = deterministic
+                                candidate = deterministic
+                                interface_mapping_retained = True
                     if candidate is not None:
                         assessment = CapabilityMatcher().assess(
                             catalog,
@@ -438,6 +472,10 @@ class OnboardingAgent:
                     "capability_id": capability_id,
                     "status": status,
                 }
+                if status == "gap":
+                    result["interface_mapping_retained"] = (
+                        interface_mapping_retained or capability_id in candidates
+                    )
             else:
                 coverage = CapabilityMatcher().assess(
                     catalog, matrix,
@@ -563,10 +601,28 @@ class OnboardingAgent:
         if package_status == "candidate" and not candidate_conformance_passed:
             completed = False
 
+        interface_mapped = all(
+            item.mapping_complete and not item.conflicts
+            for item in coverage.assessments
+        )
+        completion_policy_resolved = all(
+            item.execution_policy_complete
+            for item in coverage.assessments
+        )
+        candidate_generated = package_status == "candidate"
+        live_execution_ready = (
+            package_status == "runtime" and conformance_passed
+        )
+
         decision_path = workflow.run_root / "agent-capability-decisions.json"
         decision_path.write_text(json.dumps({
             "schema_version": "agent-capability-decisions/v0.1",
             "completed": completed,
+            "interface_mapped": interface_mapped,
+            "candidate_generated": candidate_generated,
+            "candidate_conformance_passed": candidate_conformance_passed,
+            "completion_policy_resolved": completion_policy_resolved,
+            "live_execution_ready": live_execution_ready,
             "decisions": [asdict(item) for item in ordered_decisions],
             "deterministic_assessments": [
                 {
@@ -586,11 +642,15 @@ class OnboardingAgent:
         )
         return OnboardingRunResult(
             completed=completed,
-            final_message=f"Deterministic capability assessment complete: {statuses}",
+            final_message=f"Capability assessment complete: {statuses}",
             package_root=package_root,
             conformance_passed=conformance_passed,
             package_status=package_status,
+            interface_mapped=interface_mapped,
+            candidate_generated=candidate_generated,
             candidate_conformance_passed=candidate_conformance_passed,
+            completion_policy_resolved=completion_policy_resolved,
+            live_execution_ready=live_execution_ready,
             decisions=ordered_decisions,
             rejections=tuple(rejections),
             tool_trace=tuple(trace),
