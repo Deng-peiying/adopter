@@ -123,3 +123,15 @@ class CapabilityAssessment:
     def __post_init__(self) -> None:
         if self.status not in {"native", "derived", "unsupported", "unknown"}:
             raise ValueError("status must use the canonical assessment vocabulary")
+
+
+@dataclass(frozen=True)
+class CapabilityCandidate:
+    capability_id: str
+    evidence_ids: tuple[str, ...]
+    proposed_semantics: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "proposed_semantics", MappingProxyType(dict(self.proposed_semantics))
+        )
