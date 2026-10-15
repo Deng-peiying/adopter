@@ -6,32 +6,58 @@ use the existing Weiyi Hardware Package as a runtime fallback.
 
 ## Preconditions and evidence boundary
 
-L1 and L2 completed without sending a motion command. The sealed independent
-artifact is:
+L1 and L2 completed without sending a motion command. Gate D and its 638-record
+evidence replay are archived under:
 
 ```text
-/tmp/ce-onboarding/weiyi-right-arm-20261015-native-4/hardware-package
-sha256:ea8848c3228f16b979027b3c162911e7ad2710c128a5b8025837da038eb9ee56
+~/文档/for_robot_dpy/onboarding-evidence/weiyi-right-arm-20261015-gate-d
+provider transcript sha256:4855dfe2450f15e913fdc7b1b508224314c9c6dd86c818703f5938bdca564f2b
 ```
 
-The post-seal comparison found that endpoints, interfaces, fields, joint
-order, units, MoveJ constants, result decoding, and right-arm limits match the
-human package. Three completion policy values differ:
+The DeepSeek candidate maps the endpoints, interfaces, fields, joint order,
+units, MoveJ constants, result decoding, and right-arm limits. It deliberately
+leaves three operator Runtime Completion Policy values unresolved. Gate E uses
+the following previously live-validated policy without presenting it as a
+vendor declaration:
 
-| Policy | Generated from raw example | Existing live-verified package |
-| --- | ---: | ---: |
-| Action timeout | 20 s | 90 s |
-| Arrival tolerance | 0.03 rad | 0.015 rad |
-| Settle window | 0.2 s | 1.0 s |
+| Policy | Operator-confirmed value |
+| --- | ---: |
+| Action timeout | 90 s |
+| Arrival tolerance | 0.015 rad |
+| Settle window | 1.0 s |
 
-These values do not change the requested joint target, but they change when
-the SDK declares the operation complete. Preserve the sealed L2 artifact.
-Any reviewed L3 variant must be copied to a new directory, have updated asset
-digests, pass L2 conformance again, and be named explicitly in the execution
-record. Do not edit the sealed directory in place.
+These values do not change the requested joint target. They only define how
+the runtime waits for and verifies completion. The command below preserves the
+candidate and its interface evidence, writes a separate policy record, creates
+`hardware-package-runtime`, and sends no ROS request:
 
-The read-only preflight below is permitted before that policy decision. Real
-motion remains pending explicit onsite authorization.
+```bash
+cd ~/文档/for_robot_dpy/.worktrees/body-aware-robot-agent-mvp/cross-embody-sdk
+export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
+
+python3.10 -m cross_embodiment.cli onboard confirm-policy \
+  --run-root /tmp/ce-onboarding/weiyi-right-arm-20261015-gate-d-real-1-offline-replay \
+  --timeout-s 90 \
+  --arrival-tolerance-rad 0.015 \
+  --settle-window-s 1.0 \
+  --source previously_live_validated_runtime_policy \
+  --operator robot \
+  --reference "2026-10-13 Weiyi right-arm public SDK measured-arrival validation" \
+  --json
+```
+
+The sealed runtime package used below is:
+
+```text
+~/文档/for_robot_dpy/onboarding-evidence/weiyi-right-arm-20261015-gate-e/hardware-package-runtime
+candidate package sha256:2ca45703f74a3005a5d57cf5d8d23aca255cb2dadf3140e3064f92acbe0d846c
+runtime policy sha256:786ad9bf3f18691bd3670f25046f1ec1c7828a5ed09aec320a3a06ba99a0207e
+runtime mapping sha256:f9bbd83f1c7de63869a912f0cf2bea08a140b0d5de14bc7b5eec4f569a3a7b17
+runtime package sha256:ab9eeeba9e81aed0ae295da003372300e05f3fd4efeda84dddf9fbfad94befaf
+```
+
+Real motion remains pending successful read-only preflight and explicit onsite
+authorization.
 
 ## Terminal 1: start the vendor runtime
 
@@ -71,9 +97,9 @@ export ROS_LOG_DIR=/tmp/ce-onboarding/ros-log
 mkdir -p "$ROS_LOG_DIR"
 
 python3.10 -m cross_embodiment.cli onboard preflight \
-  --package-root /tmp/ce-onboarding/weiyi-right-arm-20261015-native-4/hardware-package \
+  --package-root "$HOME/文档/for_robot_dpy/onboarding-evidence/weiyi-right-arm-20261015-gate-e/hardware-package-runtime" \
   --device right_arm \
-  --output /tmp/ce-onboarding/weiyi-right-arm-20261015-native-4/l3-preflight.json \
+  --output /tmp/ce-onboarding/weiyi-right-arm-20261015-gate-e-preflight.json \
   --json
 ```
 
@@ -100,7 +126,7 @@ before the probe.
 Create this file outside the generated package:
 
 ```bash
-cat > /tmp/ce-onboarding/weiyi-right-arm-20261015-native-4/operator-l3-target.yaml <<'YAML'
+cat > /tmp/ce-onboarding/weiyi-right-arm-20261015-gate-e-target.yaml <<'YAML'
 schema_version: l3-target/v0.1
 evidence: previously verified right-arm public-SDK joint-6 probe
 positions:
@@ -132,11 +158,11 @@ export ROS_LOG_DIR=/tmp/ce-onboarding/ros-log
 mkdir -p "$ROS_LOG_DIR"
 
 python3.10 -m cross_embodiment.cli onboard accept-l3 \
-  --package-root /tmp/ce-onboarding/weiyi-right-arm-20261015-native-4/hardware-package \
+  --package-root "$HOME/文档/for_robot_dpy/onboarding-evidence/weiyi-right-arm-20261015-gate-e/hardware-package-runtime" \
   --device right_arm \
-  --target /tmp/ce-onboarding/weiyi-right-arm-20261015-native-4/operator-l3-target.yaml \
+  --target /tmp/ce-onboarding/weiyi-right-arm-20261015-gate-e-target.yaml \
   --operator robot \
-  --output /tmp/ce-onboarding/weiyi-right-arm-20261015-native-4/l3-execution.json
+  --output /tmp/ce-onboarding/weiyi-right-arm-20261015-gate-e-execution.json
 ```
 
 The command performs another read-only preflight and prints the exact package,

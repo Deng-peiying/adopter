@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import fields
+from dataclasses import asdict, dataclass, fields
+from datetime import datetime, timezone
+from hashlib import sha256
 import json
 from pathlib import Path
 from typing import Any, Iterable, Mapping
@@ -18,13 +20,35 @@ from .extractors.native import NativeExtractor
 from .extractors.python import PythonExtractor
 from .extractors.robot_model import RobotModelExtractor
 from .extractors.ros2 import Ros2Extractor
-from .generator import GeneratedPackage, PackageGenerator, PackageIdentity
+from .generator import (
+    GeneratedPackage, PackageGenerator, PackageIdentity, package_tree_digest,
+)
 from .inventory import AssetInventory, DuplicateDigest, InventoryBuilder, InventoryIssue
 from .isolation import IsolationPolicy, PlatformLock
 from .models import (
     AssetRecord, CapabilityAssessment, CapabilityCandidate, EvidenceLevel,
     EvidenceRecord, IntegrationStage, MissingRequirement,
 )
+from .runtime_policy import RuntimeCompletionPolicy
+
+
+@dataclass(frozen=True)
+class RuntimeFinalizationResult:
+    package_root: Path
+    candidate_package_digest: str
+    policy_digest: str
+    runtime_package_digest: str
+    mapping_digest: str
+    backend_entrypoint: str
+    policy_source: str
+    interface_mapped: bool
+    completion_policy_resolved: bool
+    runtime_package_generated: bool
+    runtime_package_loadable: bool
+    runtime_preflight_passed: bool
+    conformance_passed: bool
+    live_execution_ready: bool
+    motion_sent: bool = False
 
 
 class OnboardingWorkflowError(ValueError):
@@ -246,6 +270,73 @@ class OnboardingWorkflow:
             self.run_root / "hardware-package-candidate",
             identity,
         )
+
+    def confirm_runtime_policy(
+        self,
+        *,
+        timeout_s: float,
+        arrival_tolerance_rad: float,
+        settle_window_s: float,
+        source: str,
+        operator: str,
+        reference: str,
+        confirmed_at: str | None = None,
+    ) -> RuntimeFinalizationResult:
+        """Confirm operator policy and promote the sealed candidate package.
+
+        Vendor evidence and DeepSeek decisions remain byte-for-byte unchanged.
+        This operation performs no ROS connection and sends no motion.
+        """
+        policy = RuntimeCompletionPolicy(
+            timeout_s=timeout_s,
+            arrival_tolerance_rad=arrival_tolerance_rad,
+            settle_window_s=settle_window_s,
+            source=source,
+            operator=operator,
+            reference=reference,
+            confirmed_at=confirmed_at or datetime.now(timezone.utc).isoformat(),
+        )
+        policy.validate()
+        candidate_root = self.run_root / "hardware-package-candidate"
+        candidate_report = ConformanceRunner().validate_candidate_package(candidate_root)
+        if not candidate_report.passed:
+            raise ConformanceFailure(
+                "candidate package failed conformance: "
+                + "; ".join(candidate_report.failures)
+            )
+        output_root = self.run_root / "hardware-package-runtime"
+        if output_root.exists() and any(output_root.iterdir()):
+            raise ValueError("runtime package output already exists")
+        backend = load_backend_descriptor(
+            self.platform_root / "catalogs/backends/ros2_mapped_v0.1.yaml"
+        )
+        generated = PackageGenerator.promote_candidate(
+            candidate_root, output_root, policy, backend,
+        )
+        report = ConformanceRunner().validate_generated_package(generated.root)
+        policy_path = generated.root / "validation/runtime-completion-policy.yaml"
+        result = RuntimeFinalizationResult(
+            package_root=generated.root,
+            candidate_package_digest=package_tree_digest(candidate_root),
+            policy_digest=sha256(policy_path.read_bytes()).hexdigest(),
+            runtime_package_digest=package_tree_digest(generated.root),
+            mapping_digest=sha256(generated.mapping_yaml.read_bytes()).hexdigest(),
+            backend_entrypoint=backend.entrypoint,
+            policy_source=policy.source,
+            interface_mapped=True,
+            completion_policy_resolved=True,
+            runtime_package_generated=True,
+            runtime_package_loadable=report.passed,
+            runtime_preflight_passed=False,
+            conformance_passed=report.passed,
+            live_execution_ready=False,
+            motion_sent=False,
+        )
+        (self.run_root / "runtime-finalization-report.json").write_text(
+            json.dumps(_plain(asdict(result)), indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        return result
 
     def validate(self) -> ConformanceReport:
         report = ConformanceRunner().validate_generated_package(self.run_root / "hardware-package")

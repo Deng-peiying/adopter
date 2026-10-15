@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
@@ -7,10 +8,12 @@ from typing import Any
 
 import yaml
 
-from .backend_fit import BackendFitReport
+from ..package.manifest import load_package_manifest
+from .backend_fit import BackendDescriptor, BackendFitReport
 from .capability import CapabilityCoverage, required_candidate_fields
 from .evidence import EvidenceMatrix
 from .evidence_contract import execution_policy_fields
+from .runtime_policy import RuntimeCompletionPolicy
 
 
 @dataclass(frozen=True)
@@ -53,6 +56,18 @@ def _write_yaml(path: Path, data: dict[str, Any]) -> None:
 
 def _digest(path: Path) -> str:
     return sha256(path.read_bytes()).hexdigest()
+
+
+def package_tree_digest(root: Path) -> str:
+    digest = sha256()
+    for path in sorted(item for item in root.rglob("*") if item.is_file()):
+        relative = path.relative_to(root).as_posix()
+        if "__pycache__" in path.parts or path.suffix == ".pyc":
+            continue
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+    return digest.hexdigest()
 
 
 class PackageGenerator:
@@ -328,6 +343,224 @@ class PackageGenerator:
         return GeneratedPackage(
             root, package_path, embodiment_path, mapping_path, provenance_path,
             package_status="candidate",
+        )
+
+    @staticmethod
+    def promote_candidate(
+        candidate_root: Path,
+        output_root: Path,
+        policy: RuntimeCompletionPolicy,
+        backend: BackendDescriptor,
+    ) -> GeneratedPackage:
+        """Create a runtime package without changing interface evidence.
+
+        Only the sealed candidate mapping, an explicitly confirmed operator
+        policy, and the fixed Backend descriptor are consumed here.
+        """
+        candidate_root = candidate_root.resolve()
+        candidate_package = load_package_manifest(candidate_root / "package.yaml")
+        candidate_package.validate_assets(require_digests=True)
+        if candidate_package.validation.get("candidate_only") is not True:
+            raise ValueError("source package is not a candidate package")
+        if candidate_package.validation.get("interface_mapped") is not True:
+            raise ValueError("candidate interface mapping is incomplete")
+        if candidate_package.validation.get("live_execution_ready") is not False:
+            raise ValueError("candidate must not already be live executable")
+        if len(candidate_package.backends) != 1:
+            raise ValueError("candidate must declare exactly one backend")
+        candidate_backend = candidate_package.backends[0]
+        if candidate_backend.id != backend.backend_id:
+            raise ValueError("candidate backend does not match fixed platform backend")
+
+        candidate_mapping_path = candidate_package.resolve_asset_path(
+            "interface_mapping_candidate", "yaml"
+        )
+        candidate_mapping = yaml.safe_load(
+            candidate_mapping_path.read_text(encoding="utf-8")
+        )
+        if candidate_mapping.get("schema_version") != "interface-mapping-candidate/v0.1":
+            raise ValueError("unsupported candidate mapping schema")
+        bindings = candidate_mapping.get("bindings") or {}
+        by_operation = {
+            value.get("semantic", {}).get("operation"): (name, value)
+            for name, value in bindings.items()
+        }
+        if set(by_operation) != {"joint_state", "joint_position"}:
+            raise ValueError("candidate must contain state and position bindings")
+        state_name, state_candidate = by_operation["joint_state"]
+        move_name, move_candidate = by_operation["joint_position"]
+        if not state_candidate.get("interface_mapped") or not move_candidate.get(
+            "interface_mapped"
+        ):
+            raise ValueError("candidate bindings are not interface-mapped")
+        unresolved = move_candidate.get("completion_policy") or {}
+        expected_policy_fields = {
+            "timeout_s", "arrival_tolerance_rad", "settle_window_s",
+        }
+        if (
+            unresolved.get("status") != "unresolved"
+            or set(unresolved.get("missing_fields", ())) != expected_policy_fields
+        ):
+            raise ValueError("candidate does not expose the expected policy gap")
+        device_id = str(state_candidate["semantic"]["device"])
+        if move_candidate["semantic"].get("device") != device_id:
+            raise ValueError("candidate state and action devices differ")
+        policy.validate()
+
+        root = output_root.resolve()
+        if root.exists() and any(root.iterdir()):
+            raise ValueError(f"generation output must be empty: {root}")
+        (root / "config").mkdir(parents=True, exist_ok=True)
+        (root / "validation").mkdir(parents=True, exist_ok=True)
+        mapping_path = root / "config" / f"{device_id}_ros2_mapping.yaml"
+        embodiment_path = root / "embodiment.yaml"
+        provenance_path = root / "generation-provenance.yaml"
+        package_path = root / "package.yaml"
+        policy_path = root / "validation" / "runtime-completion-policy.yaml"
+
+        candidate_digest = package_tree_digest(candidate_root)
+        policy_document = policy.document(
+            device_id=device_id,
+            candidate_package_digest=candidate_digest,
+        )
+        _write_yaml(policy_path, policy_document)
+
+        state = deepcopy(state_candidate)
+        move = deepcopy(move_candidate)
+        state.pop("interface_mapped", None)
+        move.pop("interface_mapped", None)
+        move.pop("completion_policy", None)
+        move["transport"]["timeout_s"] = float(policy.timeout_s)
+        move["completion"] = {
+            "state_binding": state_name,
+            "arrival_tolerance_rad": float(policy.arrival_tolerance_rad),
+            "settle_window_s": float(policy.settle_window_s),
+        }
+        _write_yaml(mapping_path, {
+            "schema_version": "interface-mapping/v1",
+            "bindings": {state_name: state, move_name: move},
+        })
+
+        candidate_embodiment = yaml.safe_load(
+            (candidate_root / str(candidate_package.embodiment_manifest)).read_text(
+                encoding="utf-8"
+            )
+        )
+        embodiment = deepcopy(candidate_embodiment)
+        devices = embodiment.get("devices") or []
+        if len(devices) != 1 or devices[0].get("id") != device_id:
+            raise ValueError("candidate embodiment scope does not match mapping")
+        devices[0]["capabilities"] = ["joint_state", "joint_position"]
+        devices[0].pop("candidate_capabilities", None)
+        joint_count = len(devices[0].get("joints") or [])
+        embodiment["control"] = {"supported_modes": [{
+            "type": "joint_position",
+            "target": device_id,
+            "dimension": joint_count,
+            "unit": "radian",
+        }]}
+        _write_yaml(embodiment_path, embodiment)
+        _write_yaml(root / "config" / "connection.yaml", {
+            "mapping_path": f"config/{mapping_path.name}",
+            "manage_process": False,
+        })
+
+        candidate_provenance = yaml.safe_load(
+            (candidate_root / "generation-provenance.yaml").read_text(
+                encoding="utf-8"
+            )
+        )
+        provenance = {
+            "schema_version": "generation-provenance/v0.1",
+            "package": candidate_package.name,
+            "package_status": "runtime",
+            "source_candidate": {
+                "tree_sha256": candidate_digest,
+                "mapping_sha256": _digest(candidate_mapping_path),
+            },
+            "runtime_policy": {
+                "sha256": _digest(policy_path),
+                "source": policy.source,
+                "operator": policy.operator,
+                "confirmed_at": policy.confirmed_at,
+                "reference": policy.reference,
+                "vendor_declared": False,
+            },
+            "backend": {
+                "id": backend.backend_id,
+                "version": backend.version,
+                "entrypoint": backend.entrypoint,
+            },
+            "capabilities": {
+                "joint_position_state": {
+                    "interface_mapped": True,
+                    "completion_policy_resolved": True,
+                },
+                "joint_position": {
+                    "interface_mapped": True,
+                    "completion_policy_resolved": True,
+                },
+            },
+            "evidence": candidate_provenance.get("evidence", []),
+            "live_execution_ready": False,
+        }
+        _write_yaml(provenance_path, provenance)
+
+        package = {
+            "schema_version": "hardware-package/v0.1",
+            "package": {
+                "name": candidate_package.name,
+                "version": candidate_package.version,
+                "vendor": candidate_package.vendor,
+                "model": candidate_package.model,
+                "type": candidate_package.type,
+            },
+            "embodiment_manifest": "embodiment.yaml",
+            "assets": {
+                "interface_mapping": [{
+                    "format": "yaml",
+                    "path": f"config/{mapping_path.name}",
+                    "source": True,
+                    "digest": f"sha256:{_digest(mapping_path)}",
+                }],
+                "generation_provenance": [{
+                    "format": "yaml",
+                    "path": "generation-provenance.yaml",
+                    "source": True,
+                    "digest": f"sha256:{_digest(provenance_path)}",
+                }],
+                "runtime_completion_policy": [{
+                    "format": "yaml",
+                    "path": "validation/runtime-completion-policy.yaml",
+                    "source": True,
+                    "digest": f"sha256:{_digest(policy_path)}",
+                }],
+            },
+            "backends": [{
+                "id": backend.backend_id,
+                "type": "python",
+                "entrypoint": backend.entrypoint,
+                "requirements": dict(candidate_backend.requirements),
+            }],
+            "defaults": {
+                "backend": backend.backend_id,
+                "config": "config/connection.yaml",
+            },
+            "validation": {
+                "scope": [device_id],
+                "capabilities": ["joint_position", "joint_position_state"],
+                "candidate_only": False,
+                "interface_mapped": True,
+                "completion_policy_resolved": True,
+                "runtime_package_generated": True,
+                "runtime_preflight_passed": False,
+                "live_execution_ready": False,
+            },
+        }
+        _write_yaml(package_path, package)
+        return GeneratedPackage(
+            root, package_path, embodiment_path, mapping_path, provenance_path,
+            package_status="runtime",
         )
 
     @staticmethod

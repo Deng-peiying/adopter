@@ -9,6 +9,7 @@ import yaml
 from cross_embodiment.cli import _build_parser, _write_provider_transcript, main
 from cross_embodiment.onboarding.generator import PackageGenerator
 from tests.onboarding.test_package_generator import inputs, partial_policy_inputs
+from tests.onboarding.test_runtime_policy import _unresolved_run
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -140,6 +141,41 @@ def test_validate_candidate_cli_keeps_unresolved_policy_non_executable(
     assert result["live_execution_ready"] is False
     assert result["motion_sent"] is False
     assert "execution_policy_gap_recorded" in result["checks"]
+
+
+def test_confirm_policy_cli_builds_runtime_package_without_motion(
+    tmp_path: Path, capsys,
+) -> None:
+    workflow, identity_path, scope_path = _unresolved_run(tmp_path)
+    workflow.assess(scope_path, workflow.run_root / "deterministic-candidates.yaml")
+    workflow.generate_candidate(identity_path)
+
+    code = main([
+        "onboard", "confirm-policy",
+        "--run-root", str(workflow.run_root),
+        "--timeout-s", "90",
+        "--arrival-tolerance-rad", "0.015",
+        "--settle-window-s", "1.0",
+        "--source", "previously_live_validated_runtime_policy",
+        "--operator", "robot",
+        "--reference", "2026-10-13 right-arm measured-arrival validation",
+        "--confirmed-at", "2026-10-15T23:30:00+08:00",
+        "--json",
+    ])
+
+    assert code == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["phase"] == "confirm_policy"
+    assert result["conformance_passed"] is True
+    assert result["completion_policy_resolved"] is True
+    assert result["runtime_package_loadable"] is True
+    assert result["runtime_preflight_passed"] is False
+    assert result["live_execution_ready"] is False
+    assert result["motion_sent"] is False
+    assert result["policy_source"] == "previously_live_validated_runtime_policy"
+    assert result["package_root"] == str(
+        workflow.run_root / "hardware-package-runtime"
+    )
 
 
 def test_read_only_preflight_cli_has_no_run_root_or_motion(monkeypatch, tmp_path: Path, capsys) -> None:

@@ -379,6 +379,24 @@ def _build_parser() -> argparse.ArgumentParser:
     agent.add_argument("--max-turns", type=int, default=32)
     agent.add_argument("--output", type=Path)
     agent.add_argument("--json", action="store_true")
+    confirm_policy = phases.add_parser(
+        "confirm-policy",
+        help=(
+            "confirm an explicit operator Runtime Completion Policy and build "
+            "a runtime package without connecting to hardware"
+        ),
+    )
+    confirm_policy.add_argument("--run-root", type=Path, required=True)
+    confirm_policy.add_argument("--timeout-s", type=float, required=True)
+    confirm_policy.add_argument(
+        "--arrival-tolerance-rad", type=float, required=True,
+    )
+    confirm_policy.add_argument("--settle-window-s", type=float, required=True)
+    confirm_policy.add_argument("--source", required=True)
+    confirm_policy.add_argument("--operator", required=True)
+    confirm_policy.add_argument("--reference", required=True)
+    confirm_policy.add_argument("--confirmed-at")
+    confirm_policy.add_argument("--json", action="store_true")
     preflight = phases.add_parser(
         "preflight",
         help="read state through one explicit generated Hardware Package without enabling control",
@@ -437,6 +455,22 @@ def _write_provider_transcript(
 
 
 def _onboard(args) -> int:
+    if args.onboard_phase == "confirm-policy":
+        from ..onboarding.workflow import OnboardingWorkflow
+
+        result = OnboardingWorkflow(args.run_root).confirm_runtime_policy(
+            timeout_s=args.timeout_s,
+            arrival_tolerance_rad=args.arrival_tolerance_rad,
+            settle_window_s=args.settle_window_s,
+            source=args.source,
+            operator=args.operator,
+            reference=args.reference,
+            confirmed_at=args.confirmed_at,
+        )
+        payload = _plain_onboarding_value(asdict(result))
+        payload["phase"] = "confirm_policy"
+        _emit_onboarding(payload, args.json)
+        return 0 if result.conformance_passed else 14
     if args.onboard_phase == "preflight":
         from ..onboarding.l3 import preflight_generated_package
 
