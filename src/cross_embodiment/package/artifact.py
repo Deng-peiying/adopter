@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import json
 import os
 from pathlib import Path, PurePosixPath
+import re
 import stat
 import tempfile
 import zipfile
@@ -17,6 +18,13 @@ from .registry import _directory_digest
 ARTIFACT_SCHEMA = "hardware-package-artifact/v0.1"
 _IGNORED = {".git", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache"}
 _ROOT_OUTPUTS = {"build", "install", "log", "logs"}
+_VERSION_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+\-]*$")
+
+
+def _validate_version(value: str) -> str:
+    if not _VERSION_PATTERN.fullmatch(value):
+        raise PackageError(f"Invalid Hardware Package version: {value}")
+    return value
 
 
 @dataclass(frozen=True)
@@ -67,7 +75,7 @@ class ArtifactRecord:
         return cls(
             schema_version=ARTIFACT_SCHEMA,
             package_name=str(name),
-            package_version=str(version),
+            package_version=_validate_version(str(version)),
             package_tree_digest=str(digest),
             backends=tuple(dict(item) for item in backends),
             external_requirements={str(key): dict(item) for key, item in requirements.items()},
@@ -105,6 +113,9 @@ def _zip_info(name: str, mode: int = 0o644) -> zipfile.ZipInfo:
 
 def build_package_artifact(package_root: Path, output: Path) -> ArtifactRecord:
     root = package_root.resolve()
+    output = output.resolve()
+    if output.is_relative_to(root):
+        raise PackageError("Hardware Package artifact output must be outside the package source")
     manifest = root / "package.yaml"
     if not manifest.is_file():
         raise PackageError(f"Hardware Package manifest not found: {manifest}")
@@ -124,12 +135,11 @@ def build_package_artifact(package_root: Path, output: Path) -> ArtifactRecord:
     record = ArtifactRecord(
         schema_version=ARTIFACT_SCHEMA,
         package_name=package.name,
-        package_version=package.version,
+        package_version=_validate_version(package.version),
         package_tree_digest=tree_digest,
         backends=backends,
         external_requirements={backend.id: dict(backend.requirements) for backend in package.backends},
     )
-    output = output.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary_name = tempfile.mkstemp(prefix=f".{output.name}-", dir=output.parent)
     os.close(fd)

@@ -82,6 +82,12 @@ def test_artifact_build_rejects_symlinks_and_invalid_assets(tmp_path: Path) -> N
         build_package_artifact(source, tmp_path / "bad-asset.cepack")
 
 
+def test_artifact_build_rejects_output_inside_source_tree(tmp_path: Path) -> None:
+    source = _package(tmp_path / "source")
+    with pytest.raises(PackageError, match="outside the package source"):
+        build_package_artifact(source, source / "self.cepack")
+
+
 def test_artifact_inspection_and_extraction_reject_tampering_and_unsafe_paths(
     tmp_path: Path,
 ) -> None:
@@ -175,6 +181,23 @@ def test_install_rejects_different_content_for_existing_name_version(tmp_path: P
 
     with pytest.raises(PackageError, match="immutable"):
         lifecycle.install(second)
+
+
+def test_install_rejects_version_that_can_escape_store_layout(tmp_path: Path) -> None:
+    safe = tmp_path / "safe.cepack"
+    build_package_artifact(_package(tmp_path / "source"), safe)
+    artifact = tmp_path / "unsafe-version.cepack"
+    with zipfile.ZipFile(safe) as source_archive, zipfile.ZipFile(artifact, "w") as target:
+        for info in source_archive.infolist():
+            data = source_archive.read(info.filename)
+            if info.filename == "artifact.json":
+                metadata = json.loads(data)
+                metadata["package"]["version"] = "../escape"
+                data = json.dumps(metadata).encode("utf-8")
+            target.writestr(info, data)
+
+    with pytest.raises(PackageError, match="version"):
+        PackageLifecycle(tmp_path / "store").install(artifact)
 
 
 def _installed(lifecycle: PackageLifecycle, tmp_path: Path, *, version: str = "1.2.3"):
