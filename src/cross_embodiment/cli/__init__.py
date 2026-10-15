@@ -354,6 +354,24 @@ def _build_parser() -> argparse.ArgumentParser:
         phase = phases.add_parser(name)
         phase.add_argument("--run-root", type=Path, required=True)
         phase.add_argument("--json", action="store_true")
+    preflight = phases.add_parser(
+        "preflight",
+        help="read state through one explicit generated Hardware Package without enabling control",
+    )
+    preflight.add_argument("--package-root", type=Path, required=True)
+    preflight.add_argument("--device", required=True)
+    preflight.add_argument("--output", type=Path)
+    preflight.add_argument("--json", action="store_true")
+    accept_l3 = phases.add_parser(
+        "accept-l3",
+        help="operator-confirmed single target and return through one explicit generated package",
+    )
+    accept_l3.add_argument("--package-root", type=Path, required=True)
+    accept_l3.add_argument("--device", required=True)
+    accept_l3.add_argument("--target", type=Path, required=True)
+    accept_l3.add_argument("--operator", required=True)
+    accept_l3.add_argument("--output", type=Path)
+    accept_l3.add_argument("--json", action="store_true")
     return parser
 
 
@@ -365,6 +383,53 @@ def _emit_onboarding(value: dict[str, Any], as_json: bool) -> None:
 
 
 def _onboard(args) -> int:
+    if args.onboard_phase == "preflight":
+        from ..onboarding.l3 import preflight_generated_package
+
+        record = preflight_generated_package(args.package_root, args.device)
+        if args.output is not None:
+            record.write_json(args.output)
+        _emit_onboarding(record.to_dict(), args.json)
+        return 0
+    if args.onboard_phase == "accept-l3":
+        from ..onboarding.l3 import execute_generated_package_round_trip, preflight_generated_package
+
+        target_document = yaml.safe_load(args.target.read_text(encoding="utf-8")) or {}
+        positions = target_document.get("positions") if isinstance(target_document, dict) else None
+        if not isinstance(positions, dict) or not positions:
+            raise ValueError("L3 target file must contain a non-empty positions mapping")
+        positions = {str(name): float(value) for name, value in positions.items()}
+        preview = preflight_generated_package(args.package_root, args.device)
+        print("L3 acceptance preview:")
+        print(yaml.safe_dump({
+            "package_root": str(preview.package_root),
+            "package_tree_sha256": preview.package_tree_sha256,
+            "mapping_path": str(preview.mapping_path),
+            "mapping_sha256": preview.mapping_sha256,
+            "backend_id": preview.backend_id,
+            "backend_entrypoint": preview.backend_entrypoint,
+            "device_id": args.device,
+            "current_state": preview.state_sample,
+            "probe_target": positions,
+            "return_target": "fresh measured state captured immediately before the probe",
+            "operations": 2,
+        }, sort_keys=False).rstrip())
+        confirmation = input("Type EXECUTE L3 to authorize this probe and return; anything else cancels: ")
+        if confirmation != "EXECUTE L3":
+            print("L3 acceptance cancelled; no motion command sent.")
+            return 2
+        record = execute_generated_package_round_trip(
+            args.package_root,
+            args.device,
+            positions,
+            operator=args.operator,
+            authorized=True,
+        )
+        if args.output is not None:
+            record.write_json(args.output)
+        _emit_onboarding(record.to_dict(), args.json)
+        return 0 if record.classification == "passed" else 12
+
     from ..onboarding.workflow import AssetInsufficiency, ConformanceFailure, OnboardingWorkflow
 
     workflow = OnboardingWorkflow(
