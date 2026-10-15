@@ -66,3 +66,19 @@ Native 路径需要 ROS 2 Humble、主机依赖、正确配置的 CAN 接口及�
 2026-10-13 已通过 `wy-dual-o6-demo/tasks/wave_goodbye.py` 完成右臂真机链路验证：Demo 只调用 `Robot.get_joint_state()` 和 `Robot.move_joints()`；`MappedRos2Adapter` 组合纯 Mapping Engine 与 ROS2 Transport，根据 Hardware Package 的 YAML 编译 `TransportRequest`，再把 Action 结果和实测状态恢复为 SDK 类型。该验证覆盖右臂关节状态和绝对关节位置，不代表左臂、灵巧手、笛卡尔、停止或使能接口已经映射。
 
 架构和实施计划位于 `docs/`；`outputs/` 仅用于可重新生成的输出文件。JSON Schema 已按契约分类，但当前 loader 尚未执行 JSON Schema 校验。
+
+## Hardware Onboarding Agent
+
+当前分支提供独立的 Hardware Onboarding 工具链：扫描厂商原始资产，建立可追溯
+接口证据，匹配固定 Capability，评估 Backend 支持，生成隔离的 Hardware Package，
+并执行 L1/L2/L3 分级验收。接入新机器人时不修改 Unified Robot API；厂商差异
+进入 Hardware Package，新的通信机制才进入 Backend 插件。
+
+- [完整工作流](docs/onboarding/workflow.md)
+- [证据、Capability 与验证等级策略](docs/onboarding/evidence-policy.md)
+- [Weiyi 独立 L1/L2 结果](docs/onboarding/weiyi-independent-acceptance.md)
+- [Weiyi 新生成 Package 的 L3 三终端手册](docs/onboarding/weiyi-l3-runbook.md)
+
+当前自动生成范围仅为 Weiyi 右臂 `joint_position_state` 和
+`joint_position`，当前 Backend 只支持 ROS2 subscription/action。L1/L2 不发送
+动作；L3 必须显式加载新生成目录，并由现场操作者确认后执行。
