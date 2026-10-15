@@ -175,3 +175,96 @@ def test_install_rejects_different_content_for_existing_name_version(tmp_path: P
 
     with pytest.raises(PackageError, match="immutable"):
         lifecycle.install(second)
+
+
+def _installed(lifecycle: PackageLifecycle, tmp_path: Path, *, version: str = "1.2.3"):
+    artifact = tmp_path / f"arm-{version}.cepack"
+    build_package_artifact(_package(tmp_path / f"source-{version}", version=version), artifact)
+    return lifecycle.install(artifact)
+
+
+def _instance(path: Path, *, version: str = "1.2.3", external: Path | None = None) -> Path:
+    connection = f"\nconnection:\n  vendor_runtime: {external}\n" if external else "\n"
+    path.write_text(
+        f"""schema_version: robot-instance/v0.1
+instance: {{id: lab/arm01}}
+robot: {{package: example/arm, version: {version}}}
+backend: {{preferred: mapped}}
+{connection}""",
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_activate_and_use_resolve_installed_package_without_runtime_side_effects(
+    tmp_path: Path,
+) -> None:
+    lifecycle = PackageLifecycle(tmp_path / "store")
+    installed = _installed(lifecycle, tmp_path)
+    activation = lifecycle.activate(
+        "example/arm@1.2.3", _instance(tmp_path / "instance.yaml")
+    )
+
+    assert activation.instance_id == "lab/arm01"
+    assert activation.package_tree_digest == installed.package_tree_digest
+    assert activation.backend_id == "mapped"
+    use = lifecycle.resolve_use("lab/arm01")
+    assert use.package_root == Path(installed.package_root)
+    assert use.manifest_path == Path(installed.package_root, "embodiment.yaml")
+    assert use.backend_id == "mapped"
+    assert use.backend_entrypoint == "example_vendor.backend:Adapter"
+    assert use.connection == {"package_root": installed.package_root}
+
+
+def test_activate_requires_exact_instance_package_and_version(tmp_path: Path) -> None:
+    lifecycle = PackageLifecycle(tmp_path / "store")
+    _installed(lifecycle, tmp_path)
+
+    with pytest.raises(PackageError, match="does not match"):
+        lifecycle.activate(
+            "example/arm@1.2.3",
+            _instance(tmp_path / "wrong.yaml", version="2.0.0"),
+        )
+
+
+def test_use_detects_package_drift(tmp_path: Path) -> None:
+    lifecycle = PackageLifecycle(tmp_path / "store")
+    installed = _installed(lifecycle, tmp_path)
+    lifecycle.activate("example/arm@1.2.3", _instance(tmp_path / "instance.yaml"))
+    Path(installed.package_root, "drift.txt").write_text("changed", encoding="utf-8")
+
+    with pytest.raises(PackageError, match="digest"):
+        lifecycle.resolve_use("lab/arm01")
+
+
+def test_uninstall_refuses_active_package_then_removes_only_owned_files(tmp_path: Path) -> None:
+    lifecycle = PackageLifecycle(tmp_path / "store")
+    installed = _installed(lifecycle, tmp_path)
+    external = tmp_path / "vendor-runtime"
+    external.mkdir()
+    marker = external / "driver.bin"
+    marker.write_bytes(b"vendor")
+    lifecycle.activate(
+        "example/arm@1.2.3",
+        _instance(tmp_path / "instance.yaml", external=external),
+    )
+
+    with pytest.raises(PackageError, match="active"):
+        lifecycle.uninstall("example/arm@1.2.3")
+
+    lifecycle.deactivate("lab/arm01")
+    result = lifecycle.uninstall("example/arm@1.2.3")
+    assert result.package_name == "example/arm"
+    assert not Path(installed.package_root).exists()
+    assert marker.read_bytes() == b"vendor"
+
+
+def test_uninstall_one_version_preserves_another(tmp_path: Path) -> None:
+    lifecycle = PackageLifecycle(tmp_path / "store")
+    first = _installed(lifecycle, tmp_path, version="1.2.3")
+    second = _installed(lifecycle, tmp_path, version="2.0.0")
+
+    lifecycle.uninstall("example/arm@1.2.3")
+
+    assert not Path(first.package_root).exists()
+    assert lifecycle.inspect("example/arm@2.0.0") == second
