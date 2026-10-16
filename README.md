@@ -124,6 +124,106 @@ Reference Case 保留了去敏摘要和冻结清单；原始现场证据不作�
 该结论只覆盖 Weiyi 右臂的 ROS2 `joint_position_state` 与
 `joint_position`。
 
+## 已验证的 Weiyi Hardware Package
+
+团队内部已生成并验收可安装制品 `weiyi-right-arm-runtime.cepack`。该制品来自
+Clean-Room Onboarding 生成的 Runtime Package，不包含旧 Weiyi Mapping、Demo
+目标、DeepSeek 凭据或历史运行缓存。另一台满足运行依赖的主机安装 SDK 和该
+`.cepack` 后，不需要重新运行 DeepSeek，也不需要重新扫描厂商资产。
+
+当前冻结状态：
+
+| 项目 | 已验证值 |
+| --- | --- |
+| SDK Git 基线 | `dpy@11ea1de06e2b586ab9101ce13d6d9718581fdaed` |
+| Hardware Package | `weiyi/dual_o6_cleanroom_20261016@0.1.0` |
+| `.cepack` SHA-256 | `db776e0653717148a5969fed0d6b6e0f60e65715d9f06859017cc60263f86a1c` |
+| 安装后 Package Tree Digest | `sha256:a62635c0bcdc21fc2c9afc153f37012227dc85bcef253945af1495cc06471519` |
+| Mapping SHA-256 | `4eb0a18c67f4ad88c9cae33029edb5dd9997b0b8a87d309906361771f0ea2040` |
+| Backend | `ros2_mapped` / `cross_embodiment.driver.ros2_mapped:MappedRos2Adapter` |
+| 设备与 Capability | `right_arm`: `joint_position_state`、`joint_position` |
+
+2026-10-16 还完成了 GitHub 私有仓库全新 Clone 验收：从上述 Git 提交构建并
+安装 wheel，再从内部 Distribution Kit 安装 `.cepack`、激活 Robot Instance，
+最后从 Package Store 显式加载 Mapping。只读预检得到七关节真实状态、
+`arm_mode: 104` 和 `fault_code: 0`；现场输入 `EXECUTE L3` 后，Probe 与 Return
+均获得 Action 成功终态和实测到位确认。最大关节误差分别为
+`0.0002281796 rad` 和 `0.0000249272 rad`，执行记录中的
+`load_source` 为 `installed_activation`。
+
+### 安装并激活
+
+以下步骤均为本地文件和 Registry 操作，不连接、不启动、不使能机器人，也不发送
+动作：
+
+```bash
+python3.10 -m venv --system-site-packages .venv
+.venv/bin/python -m pip install ./cross_embodiment-0.1.0-py3-none-any.whl
+
+export CROSS_EMBODIMENT_STORE="$HOME/.cross_embodiment"
+.venv/bin/ce package install \
+  --artifact ./weiyi-right-arm-runtime.cepack \
+  --store "$CROSS_EMBODIMENT_STORE" \
+  --json
+
+cat > ./weiyi-right-arm.instance.yaml <<'YAML'
+schema_version: robot-instance/v0.1
+instance:
+  id: lab/weiyi-right-arm-01
+robot:
+  package: weiyi/dual_o6_cleanroom_20261016
+  version: 0.1.0
+backend:
+  preferred: ros2_mapped
+connection: {}
+YAML
+
+.venv/bin/ce package activate \
+  weiyi/dual_o6_cleanroom_20261016@0.1.0 \
+  --instance ./weiyi-right-arm.instance.yaml \
+  --store "$CROSS_EMBODIMENT_STORE" \
+  --json
+
+.venv/bin/ce package use \
+  --instance lab/weiyi-right-arm-01 \
+  --store "$CROSS_EMBODIMENT_STORE" \
+  --json
+```
+
+`package use` 返回的 `package.root` 必须位于指定 Package Store 中；运行时 Mapping
+也必须从该目录解析，不能回退到源码工作树、Onboarding 输出目录或旧 Registry。
+
+### 厂商 Runtime 与真机边界
+
+`.cepack` 不包含 Weiyi Driver、ROS2 工作区、厂商动态库或设备凭据。部署主机仍需
+由 Weiyi 或授权集成方提供与机器人匹配的 Runtime，并满足 Ubuntu 22.04 x86-64、
+ROS2 Humble 和 Python 3.10 等已验证环境要求。启动 Driver 后，右臂必须通过厂商
+`SetPower` 服务单独使能；Driver 启动与右臂使能不能合并为同一步：
+
+```bash
+source /opt/ros/humble/setup.bash
+source /path/to/weiyi/vendor-runtime/setup.bash
+
+ros2 service call /wy_robot1/right_arm_set_power \
+  arm_control_interface/srv/SetPower \
+  "{power_enable: true}"
+
+.venv/bin/ce onboard preflight \
+  --store "$CROSS_EMBODIMENT_STORE" \
+  --instance lab/weiyi-right-arm-01 \
+  --device right_arm \
+  --output ./preflight.json \
+  --json
+```
+
+预检应确认状态为 `ready`、模式为 `104`、故障码为 `0`，并且
+`motion_sent=false`。任何真机运动仍需在显示完整目标和当前实测状态后由现场操作员
+明确授权；Package 的安装和激活不会授权运动。
+
+本次验收证明了已有 ROS2 Backend 时的自动 Mapping、Package 生成、安装分发和真机
+执行闭环。Python SDK、C/C++ Library 以及自动生成全新 Backend 插件仍未完成真实
+厂商资产和真机验证，不能从该 Weiyi 结果推断为已经支持。
+
 ## Hardware Package 生命周期
 
 协议无关的 Package 生命周期使用 `ce package`：
