@@ -3,6 +3,7 @@
 日期：2026-10-16
 分支：`feature/body-aware-robot-agent-mvp`
 审计基线提交：`3572c9ffd8776019a8e0a8628dc8c53adb086071`
+发布实现提交：`4cf596f`；发布文档提交：`5eccb1d`
 状态：本地发布候选；未 Push、未合并、未创建 PR
 
 ## 1. 发布产品边界
@@ -129,7 +130,33 @@ wheel 不包含：
 
 `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=src ... python -m pytest -q`
 
-结果：`224 passed in 12.25s`。
+结果：`224 passed in 12.22s`。
+
+### Git 源码与制品复现
+
+从提交 `5eccb1d3046278a49ce02f391ce197b48f6b4c72` 创建全新本地 clone，使用
+`setuptools 83.0.0` 和 `python -m build --no-isolation` 构建：
+
+- wheel SHA-256：`c6a7bed9dba992b266d03bc5fba56599f8c5bd872cc86c0ec3aa2f14532514b1`
+- sdist SHA-256：`265104897c5f692de30321fc241ecbee73b141ae21df1d5325cda5e3be623083`
+
+构建前工作树为 clean，未使用源码 `PYTHONPATH`。此前 rc1 wheel 与最终重建 wheel
+的 88 个成员中，只有构建工具写入的 `WHEEL` 和随之变化的 `RECORD` 不同；SDK
+模块和平台资产内容相同。发布候选已替换为从固定提交重建的制品。
+
+wheel、sdist 和源码目录分别安装到三个全新虚拟环境后，三者均确认：
+
+- `cross-embodiment==0.1.0`
+- 1 份 Capability Catalog
+- 1 份 Backend Descriptor
+- 13 项 JSON Schema
+- Robot API、Mapping Engine、Ros2Transport、Onboarding Agent、Provider、Generator
+  和 Package Lifecycle 模块均可定位
+- `ce package list` 与 `ce onboard inspect --help` 可运行
+
+此外，从干净 clone 做源码安装后，使用已验收 `.cepack` 完成 install、activate 和
+use。三步均返回 `hardware_connected=false`，运行描述中的 package root 位于全新
+Store，未引用 Clean-Room 输出目录或旧 Registry。
 
 ## 6. 可复用范围与已知限制
 
@@ -148,3 +175,21 @@ wheel 不包含：
 仓库没有顶层 LICENSE，wheel METADATA 也没有 SPDX/license 字段。公开发布前需要项目所有者选择许可证并补充 `pyproject.toml` 元数据。审计未代替所有者选择许可证。
 
 Python/C++ Backend 自动生成未验证是产品能力限制，需要在 Release Notes 中明确，但不会阻止发布当前已验证的 ROS2 Mapping/Package 平台。
+
+## 8. 建议提交到 `dpy` 的内容
+
+远端 `origin/dpy` 当前为 `89abcf9`，是本分支 HEAD 的祖先，因此发布时可正常
+fast-forward，不需要 force push。待许可证和所有者授权完成后，应提交完整分支历史至
+最终发布审计提交，至少包括：
+
+1. `5db8bd4..3572c9f`：Onboarding、Gate D/E、Package Lifecycle 和 Installed
+   Package L3 的既有实现历史。
+2. `4cf596f`：将 Catalog、Backend Descriptor、13 项 Schema 随 wheel 分发，并
+   支持 wheel 外 Git 环境的 Onboarding。
+3. `5eccb1d` 及其后的发布审计文档提交：模式 A/B README、许可证清单、包含/排除
+   Manifest 和全新 clone 复现步骤。
+4. 项目所有者后续明确选择许可证后新增的 LICENSE、包元数据与 Release Notes 提交。
+
+不应提交：`release-candidates/`、本地 Distribution Kit、`.cepack`、厂商 Runtime、
+原始 Gate transcript、凭据、虚拟环境和缓存。wheel/sdist 作为 GitHub Release
+artifacts 上传，不进入源码 Git 历史。
