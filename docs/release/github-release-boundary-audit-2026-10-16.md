@@ -134,11 +134,10 @@ wheel 不包含：
 
 ### Git 源码与制品复现
 
-从提交 `5eccb1d3046278a49ce02f391ce197b48f6b4c72` 创建全新本地 clone，使用
-`setuptools 83.0.0` 和 `python -m build --no-isolation` 构建：
-
-- wheel SHA-256：`c6a7bed9dba992b266d03bc5fba56599f8c5bd872cc86c0ec3aa2f14532514b1`
-- sdist SHA-256：`265104897c5f692de30321fc241ecbee73b141ae21df1d5325cda5e3be623083`
+从包含本报告的最终发布审计提交创建全新本地 clone，使用 `setuptools 83.0.0`
+和 `python -m build --no-isolation` 构建。精确 Git commit、wheel SHA-256 和 sdist
+SHA-256 保存在候选目录的 `release-manifest.json` 与 `SHA256SUMS`；它们作为构建后
+记录，避免在 Git 文件中形成自引用提交。
 
 构建前工作树为 clean，未使用源码 `PYTHONPATH`。此前 rc1 wheel 与最终重建 wheel
 的 88 个成员中，只有构建工具写入的 `WHEEL` 和随之变化的 `RECORD` 不同；SDK
