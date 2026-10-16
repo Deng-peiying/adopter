@@ -1,251 +1,331 @@
 # Cross-Embodiment SDK
 
-本仓库发布统一的 Cross-Embodiment SDK 平台：Unified Robot Runtime、Hardware
-Onboarding Agent、Hardware Package Lifecycle，以及它们共用的 `ce` CLI。当前设计
-基准为 [`v0.3`](docs/architecture/cross-embodiment-sdk-design-v0.3.md)。
+Cross-Embodiment SDK 是一个私有的统一机器人接入与运行平台，由三部分组成：
 
-Core 的源码按 v0.3 的职责边界组织：
+1. **Unified Robot Runtime**：稳定的 `Robot` API、动作/状态类型、安全检查、Mapping Engine 和 Backend 协议。
+2. **Hardware Onboarding Agent**：扫描厂商资产，建立证据，匹配 Capability，选择 Backend，并生成 Hardware Package。
+3. **Hardware Package Lifecycle**：构建、安装、检查、激活、使用、停用和卸载不可变 `.cepack`。
+
+内部 v0.1 已用 Weiyi Dual O6 右臂验证完整 ROS2 路径：独立 wheel 安装、Clean-Room Onboarding、`.cepack` 安装、Package Store 加载、七关节状态读取，以及经操作员授权的 Probe + Return。当前真机验证范围仅为 `right_arm` 的 `joint_position_state` 和 `joint_position`。
+
+## 1. 平台边界
+
+```text
+应用 / Agent
+    │
+    ▼
+Unified Robot API
+Robot.get_joint_state() / Robot.move_joints()
+    │
+    ▼
+Hardware Package
+设备、关节、Capability、Mapping、Runtime Policy、Backend 声明
+    │
+    ▼
+通用 Backend
+当前已验证：ros2_mapped
+    │
+    ▼
+厂商 Runtime / Driver
+    │
+    ▼
+真实机器人
+```
+
+SDK wheel 不包含 Weiyi Mapping、Driver、Demo、凭据或历史运行缓存。厂商端点、消息字段、关节顺序和控制枚举保存在 Hardware Package 中；厂商 Driver 作为外部 Runtime 单独安装和启动。
+
+源码主要目录：
 
 ```text
 src/cross_embodiment/
 ├── sdk/          # Robot API 与生命周期
-├── runtime/      # Policy 执行、安全和动作映射
-├── protocol/     # Action、Observation、Policy 协议
-├── mapping/      # Hardware Package 映射校验、编译与解码
-├── backend/      # 与 ROS/Python/Native 无关的传输协议
+├── protocol/     # Action、Command、JointState、CommandResult
+├── mapping/      # 映射验证、命令编译、状态/结果解码
+├── backend/      # 协议无关 BackendTransport 契约
+├── adapter/      # RobotAdapter 静态契约
+├── driver/       # ros2_mapped、ROS2 Transport、Backend 加载
 ├── hardware/     # Embodiment Manifest、Robot Instance
-├── package/      # Package Manifest、Registry、Resolver、Lock
+├── package/      # .cepack、Store、安装和激活
 ├── onboarding/   # Scanner、Evidence、Matcher、Agent、Generator、Conformance
-├── adapter/      # Adapter Contract 与通用 Mock
-├── driver/       # ROS2 Transport、Backend 加载、健康状态、进程托管
-└── cli/          # ce 命令实现
-cli/              # 源码检出时的轻量命令入口
-schemas/          # Hardware、Embodiment、Instance、Policy、Project Schema
-tests/            # unit / integration / mock / conformance
+└── cli/          # ce CLI
 ```
 
-WY 双臂 + O6 的厂商运行时和接口映射位于独立的 `ce-hardware-weiyi-dual-o6` Hardware Package；示例项目位于独立的 `wy-dual-o6-demo`。三者是同级目录，SDK Core 不导入 ROS 2 或 WY 代码：
+## 2. 两种使用模式
+
+### 模式 A：使用已有 Hardware Package
+
+适用于普通部署用户。需要 SDK wheel、已验收的 `.cepack`，以及对应厂商 Runtime、机器人连接和系统依赖。该流程不需要 DeepSeek、SDK 源码、厂商 Mapping 源码或历史 Onboarding 记录。
 
 ```text
-for_robot_dpy/
-├── cross-embody-sdk/             # 本仓库：通用 SDK 与 ce 命令
-├── ce-hardware-weiyi-dual-o6/   # 厂商接口映射和运行时
-├── wy-dual-o6-demo/             # project.yaml、Robot Instance 和统一 API task
-└── assets/catalog.yaml           # 本地 Registry 索引
+SDK wheel + .cepack + 厂商 Runtime
+              ↓
+ install → activate → use
+              ↓
+ read-only preflight
+              ↓
+ 操作员授权后执行动作
 ```
 
-## 本地开发和 WY 项目
+### 模式 B：从厂商原始资产接入
 
-```bash
-cd cross-embody-sdk
-python3 -m pip install -e .
+适用于首次接入新机器人。用户提供 ROS2/Python/C++ 接口、头文件、动态库、示例、模型和依赖资料，Onboarding Agent 执行：
 
-ce install --project ../wy-dual-o6-demo/project.yaml --registry ..
-ce validate --project ../wy-dual-o6-demo/project.yaml --registry ..
-ce up --project ../wy-dual-o6-demo/project.yaml --dry-run --registry ..
+```text
+Inventory → Evidence → Capability Match → Backend Fit
+          → Candidate Package → Conformance
+          → Operator Runtime Policy → Runtime Package → .cepack
 ```
 
-`ce install` 从本地 Registry 将包复制并校验到 `~/.cross_embodiment/packages/`，同时生成项目 `embodiment.lock`。该操作不运行硬件启动或包内安装脚本。当前没有远程 Registry；本地开发时 Registry 指向 `for_robot_dpy/`。
+Weiyi 已验证“复用现有 ROS2 Backend 并自动生成 Mapping”。Python SDK、C/C++ Library 和全新 Backend 插件的自动代码生成、编译及真机运行尚未验证；Backend 不支持时，系统应输出明确缺口，不能伪造支持。
 
-Native 运行需要先构建 Hardware Package 的 ROS workspace，再在独立终端启动厂商驱动。当前映射后端使用 `manage_process: false` 附着到已有 ROS graph：
+## 3. 安装 SDK
 
-```bash
-cd ../ce-hardware-weiyi-dual-o6
-bash scripts/build_runtime.sh
-bash runtime/scripts/start.sh
-```
-
-Weiyi 的 Driver 启动与右臂使能是两个独立生命周期步骤。每次启动或重启
-Driver 后，都必须在第二个终端单独调用 `SetPower`，并确认右臂进入
-`arm_mode: 104` 且 `fault_code: 0`。Driver 启动本身不代表右臂已经使能：
+### 从 wheel 安装
 
 ```bash
-source ../ce-hardware-weiyi-dual-o6/runtime/setup.sh
-ros2 service call \
-  /wy_robot1/right_arm_set_power \
-  arm_control_interface/srv/SetPower \
-  "{power_enable: true}"
-timeout 10s ros2 topic echo /wy_robot1/right_arm_state --once
-```
-
-状态确认后，才能通过 Demo 的公共 Robot API 执行任务：
-
-```bash
-cd ../wy-dual-o6-demo
-source ../ce-hardware-weiyi-dual-o6/runtime/setup.sh
-export PYTHONPATH="$PWD/../cross-embody-sdk/src:$PWD${PYTHONPATH:+:$PYTHONPATH}"
-python3.10 tasks/wave_goodbye.py --cycles 2 --amplitude-rad 0.30 --send
-```
-
-Native 路径需要 ROS 2 Humble、主机依赖、正确配置的 CAN 接口及对应权限。硬件二进制包尚无确认的再分发许可，因此当前仅保留在本地 Hardware Package。
-
-2026-10-13 已通过 `wy-dual-o6-demo/tasks/wave_goodbye.py` 完成右臂真机链路验证：Demo 只调用 `Robot.get_joint_state()` 和 `Robot.move_joints()`；`MappedRos2Adapter` 组合纯 Mapping Engine 与 ROS2 Transport，根据 Hardware Package 的 YAML 编译 `TransportRequest`，再把 Action 结果和实测状态恢复为 SDK 类型。该验证覆盖右臂关节状态和绝对关节位置，不代表左臂、灵巧手、笛卡尔、停止或使能接口已经映射。
-
-架构和实施计划位于 `docs/`；`outputs/` 仅用于可重新生成的输出文件。JSON Schema 已按契约分类，但当前 loader 尚未执行 JSON Schema 校验。
-
-内部 v0.1 的抽象冻结结论、真实调用链和扩展边界见
-[`Unified SDK v0.1 抽象完整性与解耦审计`](docs/release/unified-sdk-v0.1-abstraction-freeze-audit-2026-10-16.md)。
-当前冻结的运行契约只覆盖已实现的 `joint_position_state` / `joint_position`：
-Catalog 中的 Capability 是标准词汇表，只有同时具备 Backend、Mapping 与验证证据的
-项目才是实际运行能力。
-
-## Hardware Onboarding Agent
-
-当前分支提供独立的 Hardware Onboarding 工具链：扫描厂商原始资产，建立可追溯
-接口证据，匹配固定 Capability，评估 Backend 支持，生成隔离的 Hardware Package，
-并执行 L1/L2/L3 分级验收。接入新机器人时不修改 Unified Robot API；厂商差异
-进入 Hardware Package，新的通信机制才进入 Backend 插件。
-
-wheel 同时支持两种流程：
-
-- **已有 Hardware Package**：安装并激活 `.cepack`，然后由 Unified Robot Runtime
-  使用。该流程不导入 DeepSeek Provider，也不需要厂商 Mapping 源码。
-- **只有厂商原始资产**：安装 `cross-embodiment[onboarding-agent]`，由内置
-  Scanner、Matcher、DeepSeek Provider、Backend Fit、Generator 和 Conformance
-  生成候选 Package。Catalog、Backend Descriptor 和 Schema 随 wheel 分发，
-  `--platform-root` 仅用于显式冻结其他标准版本。
-
-若现有 Backend 不能表达厂商通信方式，Backend Fit 会输出带证据和最低测试要求的
-插件缺口，不会把该能力标记为已支持。当前保留了 `BackendTransport`、动态 Backend
-入口和 `BackendPluginRequirement` 扩展边界；自动生成、编译并注册全新 Python/C++
-Backend 尚未经过实现与真机验证。
-
-- [完整工作流](docs/onboarding/workflow.md)
-- [证据、Capability 与验证等级策略](docs/onboarding/evidence-policy.md)
-- [Weiyi 独立 L1/L2 结果](docs/onboarding/weiyi-independent-acceptance.md)
-- [Weiyi 新生成 Package 的 L3 三终端手册](docs/onboarding/weiyi-l3-runbook.md)
-- [Gate D→E 端到端复盘与冻结](docs/onboarding/end-to-end-freeze-2026-10-16.md)
-- [新厂商首次接入手册](docs/onboarding/new-vendor-runbook.md)
-- [Weiyi 右臂 Reference Onboarding Case v0.1](docs/onboarding/reference-weiyi-dual-o6-right-arm-v0.1.md)
-
-当前自动生成并真机验证的范围仅为 Weiyi 右臂 `joint_position_state` 和
-`joint_position`，当前可执行 Backend 只验证了 ROS2 subscription/action。Python
-SDK、C/C++ Library 和全新 Backend 插件接入仍属于待验证的扩展路径。L1/L2 不发送
-动作；L3 必须显式加载新生成目录，并由现场操作者确认后执行。
-
-2026-10-16 已完成新生成 Package 的 Gate E / L3 真机验收：只读预检读取到
-`arm_mode: 104`、`fault_code: 0` 和真实七关节状态；现场授权后，探测与返回
-两个 `Robot.move_joints()` 均获得 ROS Action 成功终态和实测到位确认。仓库内的
-Reference Case 保留了去敏摘要和冻结清单；原始现场证据不作为 wheel 资源分发。
-该结论只覆盖 Weiyi 右臂的 ROS2 `joint_position_state` 与
-`joint_position`。
-
-## 已验证的 Weiyi Hardware Package
-
-团队内部已生成并验收可安装制品 `weiyi-right-arm-runtime.cepack`。该制品来自
-Clean-Room Onboarding 生成的 Runtime Package，不包含旧 Weiyi Mapping、Demo
-目标、DeepSeek 凭据或历史运行缓存。另一台满足运行依赖的主机安装 SDK 和该
-`.cepack` 后，不需要重新运行 DeepSeek，也不需要重新扫描厂商资产。
-
-当前冻结状态：
-
-| 项目 | 已验证值 |
-| --- | --- |
-| SDK Git 基线 | `dpy@11ea1de06e2b586ab9101ce13d6d9718581fdaed` |
-| Hardware Package | `weiyi/dual_o6_cleanroom_20261016@0.1.0` |
-| `.cepack` SHA-256 | `db776e0653717148a5969fed0d6b6e0f60e65715d9f06859017cc60263f86a1c` |
-| 安装后 Package Tree Digest | `sha256:a62635c0bcdc21fc2c9afc153f37012227dc85bcef253945af1495cc06471519` |
-| Mapping SHA-256 | `4eb0a18c67f4ad88c9cae33029edb5dd9997b0b8a87d309906361771f0ea2040` |
-| Backend | `ros2_mapped` / `cross_embodiment.driver.ros2_mapped:MappedRos2Adapter` |
-| 设备与 Capability | `right_arm`: `joint_position_state`、`joint_position` |
-
-2026-10-16 还完成了 GitHub 私有仓库全新 Clone 验收：从上述 Git 提交构建并
-安装 wheel，再从内部 Distribution Kit 安装 `.cepack`、激活 Robot Instance，
-最后从 Package Store 显式加载 Mapping。只读预检得到七关节真实状态、
-`arm_mode: 104` 和 `fault_code: 0`；现场输入 `EXECUTE L3` 后，Probe 与 Return
-均获得 Action 成功终态和实测到位确认。最大关节误差分别为
-`0.0002281796 rad` 和 `0.0000249272 rad`，执行记录中的
-`load_source` 为 `installed_activation`。
-
-### 安装并激活
-
-以下步骤均为本地文件和 Registry 操作，不连接、不启动、不使能机器人，也不发送
-动作：
-
-```bash
-python3.10 -m venv --system-site-packages .venv
+python3.10 -m venv .venv
+.venv/bin/python -m pip install --upgrade pip
 .venv/bin/python -m pip install ./cross_embodiment-0.1.0-py3-none-any.whl
 
-export CROSS_EMBODIMENT_STORE="$HOME/.cross_embodiment"
-.venv/bin/ce package install \
-  --artifact ./weiyi-right-arm-runtime.cepack \
-  --store "$CROSS_EMBODIMENT_STORE" \
+.venv/bin/ce --help
+.venv/bin/python -c 'import cross_embodiment; print(cross_embodiment.__file__)'
+```
+
+核心依赖为 Python 3.10+ 和 PyYAML 6.0+。ROS2 Backend 还需要目标系统提供兼容的 ROS2 Python 环境，例如 Humble 的 `rclpy`、`rosidl_runtime_py`、消息类型和类型支持库。
+
+### 从源码安装开发环境
+
+```bash
+git clone --branch dpy --single-branch \
+  git@github.com:owlsan49/cross-embody-sdk.git
+cd cross-embody-sdk
+
+python3.10 -m venv .venv
+.venv/bin/python -m pip install -e .
+```
+
+需要运行 Hardware Onboarding Agent 时安装可选依赖：
+
+```bash
+.venv/bin/python -m pip install -e '.[onboarding-agent]'
+```
+
+## 4. Hardware Package 命令
+
+Package 生命周期命令只操作文件、摘要、Store 记录和 Robot Instance 绑定。它们不会启动 Driver、连接机器人、使能硬件或发送动作。
+
+```bash
+CE=.venv/bin/ce
+STORE="$HOME/.cross_embodiment"
+
+"$CE" package build \
+  --package-root ./hardware-package-runtime \
+  --output ./robot.cepack \
   --json
 
-cat > ./weiyi-right-arm.instance.yaml <<'YAML'
+"$CE" package install --artifact ./robot.cepack --store "$STORE" --json
+"$CE" package list --store "$STORE" --json
+"$CE" package inspect vendor/model@1.0.0 --store "$STORE" --json
+
+"$CE" package activate vendor/model@1.0.0 \
+  --instance ./robot.instance.yaml \
+  --store "$STORE" \
+  --json
+
+"$CE" package use \
+  --instance lab/robot-01 \
+  --store "$STORE" \
+  --json
+
+"$CE" package deactivate --instance lab/robot-01 --store "$STORE" --json
+"$CE" package uninstall vendor/model@1.0.0 --store "$STORE" --json
+```
+
+Robot Instance 最小格式：
+
+```yaml
 schema_version: robot-instance/v0.1
 instance:
-  id: lab/weiyi-right-arm-01
+  id: lab/robot-01
 robot:
-  package: weiyi/dual_o6_cleanroom_20261016
-  version: 0.1.0
+  package: vendor/model
+  version: 1.0.0
 backend:
   preferred: ros2_mapped
 connection: {}
-YAML
-
-.venv/bin/ce package activate \
-  weiyi/dual_o6_cleanroom_20261016@0.1.0 \
-  --instance ./weiyi-right-arm.instance.yaml \
-  --store "$CROSS_EMBODIMENT_STORE" \
-  --json
-
-.venv/bin/ce package use \
-  --instance lab/weiyi-right-arm-01 \
-  --store "$CROSS_EMBODIMENT_STORE" \
-  --json
 ```
 
-`package use` 返回的 `package.root` 必须位于指定 Package Store 中；运行时 Mapping
-也必须从该目录解析，不能回退到源码工作树、Onboarding 输出目录或旧 Registry。
+`package use` 返回的 `package.root` 必须位于指定 Store；运行时 Mapping 也必须从该 Package 目录解析。安装版本不会回退到源码工作树、Onboarding 输出目录或旧 Registry。
 
-### 厂商 Runtime 与真机边界
+## 5. Unified Robot API
 
-`.cepack` 不包含 Weiyi Driver、ROS2 工作区、厂商动态库或设备凭据。部署主机仍需
-由 Weiyi 或授权集成方提供与机器人匹配的 Runtime，并满足 Ubuntu 22.04 x86-64、
-ROS2 Humble 和 Python 3.10 等已验证环境要求。启动 Driver 后，右臂必须通过厂商
-`SetPower` 服务单独使能；Driver 启动与右臂使能不能合并为同一步：
+当前冻结的关节 API：
+
+```python
+state = robot.get_joint_state("right_arm")
+
+result = robot.move_joints(
+    "right_arm",
+    {
+        "arm.right.joint.0": q0,
+        "arm.right.joint.1": q1,
+        "arm.right.joint.2": q2,
+        "arm.right.joint.3": q3,
+        "arm.right.joint.4": q4,
+        "arm.right.joint.5": q5,
+        "arm.right.joint.6": q6,
+    },
+)
+```
+
+`get_joint_state(device_id)` 返回 `JointState`：
+
+| 字段 | 含义 |
+| --- | --- |
+| `device_id` | 规范设备 ID |
+| `positions` | 规范关节名到实测弧度值的映射 |
+| `source_timestamp` | 厂商状态时间戳，若接口没有提供则为 `None` |
+| `received_at` | SDK 收到状态的时间 |
+| `status` | `ready`、`not_ready`、`fault`、`stale` 等状态 |
+| `details` | Backend 模式、厂商故障码等可审计信息 |
+
+`move_joints(device_id, positions)` 接收完整的绝对关节目标。目标键必须与 Package 声明的规范关节集合完全一致。返回 `CommandResult`，关键字段包括：
+
+| 字段 | 含义 |
+| --- | --- |
+| `accepted` | Backend 是否接受本次请求 |
+| `status` | `succeeded`、`rejected` 等终态 |
+| `dispatched` | 是否尝试发送到 Backend |
+| `backend_code` | 厂商结果码 |
+| `arrival_confirmed` | 是否通过实测状态确认到位 |
+| `max_joint_error_rad` | 最大实测关节误差 |
+| `final_joint_state` | 完成后的实测状态 |
+
+业务逻辑应只依赖 `Robot` 与标准类型：
+
+```python
+from cross_embodiment import Robot
+
+
+def execute_known_target(robot: Robot, target: dict[str, float]) -> None:
+    state = robot.get_joint_state("right_arm")
+    if state.status != "ready":
+        raise RuntimeError(f"right_arm is {state.status}: {state.details}")
+
+    result = robot.move_joints("right_arm", target)
+    if result.status != "succeeded" or result.arrival_confirmed is not True:
+        raise RuntimeError(f"motion failed: {result}")
+```
+
+`cross_embodiment.connect()` 是 Backend 集成使用的低层入口，需要显式传入 Manifest 与 Adapter callable。v0.1 尚未提供公共 `Robot.from_package(...)` 工厂。安装 Package 后的正式加载路径由 `ce package use`、`ce onboard preflight` 和 `ce onboard accept-l3` 完成，内部会验证 Package、Mapping、Backend 和 Store 摘要后创建 `Robot`。
+
+## 6. 已安装 Package 的运行命令
+
+### 只读预检
+
+先按厂商文档启动 Driver 并完成必须的硬件使能，再显式执行：
 
 ```bash
-source /opt/ros/humble/setup.bash
-source /path/to/weiyi/vendor-runtime/setup.bash
+CE=.venv/bin/ce
+STORE="$HOME/.cross_embodiment"
 
-ros2 service call /wy_robot1/right_arm_set_power \
-  arm_control_interface/srv/SetPower \
-  "{power_enable: true}"
-
-.venv/bin/ce onboard preflight \
-  --store "$CROSS_EMBODIMENT_STORE" \
-  --instance lab/weiyi-right-arm-01 \
+"$CE" onboard preflight \
+  --store "$STORE" \
+  --instance lab/robot-01 \
   --device right_arm \
   --output ./preflight.json \
   --json
 ```
 
-预检应确认状态为 `ready`、模式为 `104`、故障码为 `0`，并且
-`motion_sent=false`。任何真机运动仍需在显示完整目标和当前实测状态后由现场操作员
-明确授权；Package 的安装和激活不会授权运动。
+预检只读取状态，不发送目标。Weiyi 已验证条件为：七个关节、`status=ready`、`backend_mode=104`、`backend_fault_code=0`、`motion_sent=false`。
 
-本次验收证明了已有 ROS2 Backend 时的自动 Mapping、Package 生成、安装分发和真机
-执行闭环。Python SDK、C/C++ Library 以及自动生成全新 Backend 插件仍未完成真实
-厂商资产和真机验证，不能从该 Weiyi 结果推断为已经支持。
-
-## Hardware Package 生命周期
-
-协议无关的 Package 生命周期使用 `ce package`：
+### 操作员授权的 L3
 
 ```bash
-ce package build --package-root ./hardware-package-runtime --output ./robot.cepack
-ce package install --artifact ./robot.cepack
-ce package list --json
-ce package inspect vendor/model@1.0.0 --json
-ce package activate vendor/model@1.0.0 --instance ./instance.yaml
-ce package use --instance lab/robot-01 --json
-ce package deactivate --instance lab/robot-01
-ce package uninstall vendor/model@1.0.0
+"$CE" onboard accept-l3 \
+  --store "$STORE" \
+  --instance lab/robot-01 \
+  --device right_arm \
+  --target ./validated-target.yaml \
+  --operator "$USER" \
+  --output ./installed-package-l3.json
 ```
 
-这些命令只处理制品、Registry 记录和 Robot Instance 绑定；不会连接、启动、
-使能机器人，也不会发送动作。Backend 和外部 Driver 依赖会被记录，但卸载
-Hardware Package 不会删除共享厂商运行环境。完整说明见
-[`docs/package-lifecycle.md`](docs/package-lifecycle.md)。
+命令会先显示 Package/Mapping 摘要、当前实测状态、Probe 目标和返回策略。只有现场操作员输入精确确认词 `EXECUTE L3` 后才发送 Probe，并使用动作前的新鲜实测姿态执行 Return。
+
+## 7. Weiyi 已验证分发包
+
+团队内部 `package_dpy` 分支提供独立 Distribution Kit，包含固定 SDK wheel、`weiyi-right-arm-runtime.cepack`、环境要求、安装验证脚本，以及带两次人工确认的一键 `quickstart.sh`。
+
+```bash
+./quickstart.sh all \
+  --runtime-root "$HOME/ce-runtime/weiyi-right-arm" \
+  --vendor-root "$HOME/vendor/robot_launch" \
+  --instance-id lab/weiyi-right-arm-01 \
+  --operator "$USER"
+```
+
+也可分阶段执行：
+
+```bash
+./quickstart.sh install   --runtime-root "$RUNTIME_ROOT" --vendor-root "$VENDOR_ROOT"
+./quickstart.sh preflight --runtime-root "$RUNTIME_ROOT" --vendor-root "$VENDOR_ROOT"
+./quickstart.sh accept-l3 --runtime-root "$RUNTIME_ROOT" --vendor-root "$VENDOR_ROOT" --operator "$USER"
+```
+
+`quickstart.sh` 会要求操作员分别输入：
+
+- `ENABLE RIGHT ARM`：调用厂商 `SetPower`，不包含关节目标；
+- `EXECUTE L3`：在只读预检通过后授权 Probe + Return。
+
+`.cepack` 不包含 Weiyi Driver。目标主机仍需提供兼容的 Ubuntu 22.04 x86-64、ROS2 Humble、Python 3.10、CAN 配置及授权的 `robot_launch`/`wy_arm_sdk` Runtime。
+
+## 8. Hardware Onboarding Agent
+
+确定性资产扫描不会连接机器人或发送动作：
+
+```bash
+RUN_ROOT="$PWD/onboarding-run"
+VENDOR_ROOT="/path/to/vendor-assets"
+
+ce onboard inspect \
+  --vendor-root "$VENDOR_ROOT" \
+  --run-root "$RUN_ROOT" \
+  --json
+```
+
+DeepSeek 模式需要 `cross-embodiment[onboarding-agent]` 可选依赖和本地凭据。Agent 只能使用限定的类型化工具；Scanner、Matcher、Generator、Schema 和 Conformance 保持确定性。第一次生成必须隔离旧 Package、Mapping、Demo、Transcript 和缓存。
+
+完整流程见：
+
+- [Hardware Onboarding 工作流](docs/onboarding/workflow.md)
+- [新厂商接入手册](docs/onboarding/new-vendor-runbook.md)
+- [Evidence Policy](docs/onboarding/evidence-policy.md)
+- [Hardware Package 生命周期](docs/package-lifecycle.md)
+- [Unified SDK v0.1 抽象冻结审计](docs/release/unified-sdk-v0.1-abstraction-freeze-audit-2026-10-16.md)
+
+## 9. 当前已验证与未验证范围
+
+| 项目 | 状态 |
+| --- | --- |
+| SDK wheel 独立安装 | 已验证 |
+| `.cepack` build/install/list/inspect/activate/use/uninstall | 已验证 |
+| Installed Package Store 显式加载 | 已验证 |
+| Weiyi 右臂 ROS2 状态读取 | 已验证 |
+| Weiyi 右臂 ROS2 绝对关节位置与实测到位 | 已验证 |
+| Clean-Room DeepSeek Mapping 生成 | 已验证 |
+| 左臂、灵巧手、笛卡尔、Stop/Power 统一 Capability | 未纳入 v0.1 |
+| 通用 Python SDK Backend | 未验证 |
+| 通用 C/C++ Native Backend | 未验证 |
+| 自动生成并注册全新 Backend 插件 | 未验证 |
+| 公共 `Robot.from_package(...)` 工厂 | 尚未实现 |
+
+## 10. 安全和生命周期规则
+
+- `package install/activate/use` 均为纯文件操作。
+- 安装不会启动 Driver、配置 CAN、连接、使能或移动机器人。
+- Driver 启动与硬件使能是独立步骤。
+- `preflight` 只读，必须报告 `motion_sent=false`。
+- 真机动作必须显示当前状态与目标，并由现场操作员确认。
+- Action 接受不等于动作成功；必须检查终态、厂商错误码和实测到位。
+- 卸载 `.cepack` 不删除共享厂商 Driver、ROS2 或设备数据。
