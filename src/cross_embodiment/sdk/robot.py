@@ -2,13 +2,16 @@ from __future__ import annotations
 
 from pathlib import Path
 from dataclasses import asdict, is_dataclass
-from typing import Callable, Any
+from typing import TYPE_CHECKING, Callable, Any
 
 from ..adapter.mock import MockAdapter
 from ..hardware.manifest import EmbodimentManifest, load_manifest
 from ..protocol.types import Action, ActionSpec, Command, CommandResult, JointState, RobotState
 from ..runtime.mapping import ActionMapper
 from ..runtime.safety import SafetyGuard
+
+if TYPE_CHECKING:
+    from ..runtime.installed import RuntimeInfo
 
 
 class Lifecycle:
@@ -55,10 +58,37 @@ class Lifecycle:
 
 
 class Robot:
-    def __init__(self, adapter, manifest: EmbodimentManifest):
+    def __init__(
+        self,
+        adapter: Any,
+        manifest: EmbodimentManifest,
+        *,
+        runtime_info: RuntimeInfo | None = None,
+    ) -> None:
         self.adapter = adapter
         self.manifest = manifest
+        self.runtime_info = runtime_info
         self.lifecycle = Lifecycle(adapter)
+
+    @classmethod
+    def from_instance(
+        cls,
+        instance_id: str,
+        *,
+        store: str | Path | None = None,
+        allow_motion: bool = False,
+    ) -> Robot:
+        from ..runtime.installed import create_robot_from_instance
+
+        return create_robot_from_instance(
+            instance_id,
+            store=store,
+            allow_motion=allow_motion,
+        )
+
+    def connect(self) -> Robot:
+        self.lifecycle.connect()
+        return self
 
     def state(self) -> RobotState:
         return self.adapter.get_state()
@@ -124,7 +154,13 @@ class Robot:
             return [self.adapter.send_command(item) for item in mapped]
 
     def close(self) -> None:
-        self.adapter.disconnect()
+        self.lifecycle.stop()
+
+    def __enter__(self) -> Robot:
+        return self.connect()
+
+    def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
+        self.close()
 
 
 def connect(

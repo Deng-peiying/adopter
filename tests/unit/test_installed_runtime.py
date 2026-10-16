@@ -5,7 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from cross_embodiment.errors import PackageError
+from cross_embodiment import Robot, RuntimeInfo
+from cross_embodiment.errors import PackageError, SafetyViolation
 from cross_embodiment.package.artifact import build_package_artifact
 from cross_embodiment.package.lifecycle import PackageLifecycle
 from cross_embodiment.runtime.installed import (
@@ -22,7 +23,12 @@ def _write_runtime_package(
     root.mkdir(parents=True)
     (root / "config").mkdir()
     (root / "runtime_fixture_backend.py").write_text(
-        """class Adapter:
+        """from datetime import datetime, timezone
+
+from cross_embodiment.protocol.types import CommandResult, RobotState, SafetyState
+
+
+class Adapter:
     def __init__(self, manifest, *, connection, control_enabled, dry_run, manage_process=False):
         self.manifest = manifest
         self.connection = connection
@@ -40,11 +46,15 @@ def _write_runtime_package(
         self.disconnect_calls += 1
 
     def get_state(self):
-        raise AssertionError("fixture state was not requested")
+        return RobotState(
+            timestamp=datetime.now(timezone.utc),
+            joint_positions={"arm.joint.0": 0.0, "arm.joint.1": 0.0},
+            safety=SafetyState(enabled=True),
+        )
 
     def send_command(self, command):
         self.sent.append(command)
-        raise AssertionError("fixture command was not expected")
+        return CommandResult(True, status="succeeded", dispatched=True)
 """,
         encoding="utf-8",
     )
@@ -192,3 +202,32 @@ def test_backend_without_mapping_has_none_mapping_provenance(tmp_path: Path) -> 
 
     assert resolved.info.mapping_path is None
     assert resolved.info.mapping_sha256 is None
+
+
+def test_public_factory_exports_runtime_info_and_stays_disconnected(tmp_path: Path) -> None:
+    store, instance_id, _ = _install_and_activate(tmp_path)
+
+    robot = Robot.from_instance(instance_id, store=store)
+
+    assert isinstance(robot.runtime_info, RuntimeInfo)
+    assert robot.runtime_info.instance_id == instance_id
+    assert robot.adapter.connect_calls == 0
+
+
+def test_public_factory_enforces_motion_permission_for_move_and_command(tmp_path: Path) -> None:
+    store, instance_id, _ = _install_and_activate(tmp_path)
+    target = {"arm.joint.0": 0.1, "arm.joint.1": -0.1}
+    read_only = Robot.from_instance(instance_id, store=store)
+
+    with pytest.raises(SafetyViolation, match="disabled"):
+        read_only.move_joints("arm", target)
+    with pytest.raises(SafetyViolation, match="disabled"):
+        from cross_embodiment.protocol.types import Action, ActionSpec
+
+        read_only.command(Action(ActionSpec("joint_position", "arm", dimension=2), {"positions": target}))
+    assert read_only.adapter.sent == []
+
+    writable = Robot.from_instance(instance_id, store=store, allow_motion=True)
+    result = writable.move_joints("arm", target)
+    assert result.status == "succeeded"
+    assert writable.adapter.sent[0].payload["positions"] == target

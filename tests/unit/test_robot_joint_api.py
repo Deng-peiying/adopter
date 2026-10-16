@@ -11,6 +11,14 @@ class JointBackend:
         self.sent = []
         self.control_enabled = True
         self.dry_run = False
+        self.connect_calls = 0
+        self.disconnect_calls = 0
+
+    def connect(self):
+        self.connect_calls += 1
+
+    def disconnect(self):
+        self.disconnect_calls += 1
 
     def get_state(self):
         return RobotState(
@@ -79,6 +87,24 @@ class RobotJointApiTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.robot.command(action)
         self.assertEqual(self.backend.sent, [])
+
+    def test_connect_and_close_are_idempotent(self):
+        self.assertIs(self.robot.connect(), self.robot)
+        self.assertIs(self.robot.connect(), self.robot)
+        self.assertEqual(self.backend.connect_calls, 1)
+
+        self.robot.close()
+        self.robot.close()
+        self.assertEqual(self.backend.disconnect_calls, 1)
+
+    def test_context_manager_closes_after_exception(self):
+        with self.assertRaisesRegex(RuntimeError, "boom"):
+            with self.robot as active:
+                self.assertIs(active, self.robot)
+                raise RuntimeError("boom")
+
+        self.assertEqual(self.backend.connect_calls, 1)
+        self.assertEqual(self.backend.disconnect_calls, 1)
 
 
 if __name__ == "__main__":
