@@ -12,6 +12,7 @@ import yaml
 
 from ..driver.backend import load_backend_entrypoint
 from ..hardware.manifest import load_manifest
+from ..package.lifecycle import PackageLifecycle
 from ..package.manifest import PlatformInfo, load_package_manifest
 from ..sdk.robot import connect
 
@@ -31,6 +32,9 @@ class L3ExecutionRecord:
     classification: str
     motion_sent: bool
     operator: str | None
+    load_source: str = "explicit_package_root"
+    instance_id: str | None = None
+    installed_package_digest: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         value = asdict(self)
@@ -133,6 +137,38 @@ def _load_generated_runtime(package_root: Path, device_id: str) -> tuple[Path, A
     return root, manifest, backend, mapping_path, connection
 
 
+def _load_installed_runtime(
+    store_root: Path,
+    instance_id: str,
+    device_id: str,
+) -> tuple[Path, Any, Any, Path, dict[str, Any], str]:
+    """Resolve one activated package and retain its immutable Store provenance."""
+
+    use = PackageLifecycle(store_root).resolve_use(instance_id)
+    root, manifest, backend, mapping_path, _ = _load_generated_runtime(
+        use.package_root, device_id,
+    )
+    if root != use.package_root.resolve():
+        raise ValueError("activated package root differs from the verified SDK Store root")
+    package = load_package_manifest(root / "package.yaml")
+    declared_manifest = (root / str(package.embodiment_manifest)).resolve()
+    if use.manifest_path.resolve() != declared_manifest:
+        raise ValueError("activated embodiment manifest differs from the installed package")
+    if backend.id != use.backend_id or backend.entrypoint != use.backend_entrypoint:
+        raise ValueError("activated Backend differs from the installed package selection")
+
+    connection = dict(use.connection)
+    if Path(str(connection.get("package_root", ""))).resolve() != root:
+        raise ValueError("activated connection does not reference the installed package root")
+    mapping_value = Path(str(connection.get("mapping_path", "")))
+    if not mapping_value.parts or mapping_value.is_absolute() or ".." in mapping_value.parts:
+        raise ValueError("activated mapping path must stay inside the installed package")
+    activated_mapping = (root / mapping_value).resolve()
+    if activated_mapping != mapping_path:
+        raise ValueError("activated mapping differs from the installed package asset")
+    return root, manifest, backend, mapping_path, connection, use.package_tree_digest
+
+
 def _connect_runtime(
     root: Path,
     manifest: Any,
@@ -172,6 +208,46 @@ def preflight_generated_package(
     """
 
     root, manifest, backend, mapping_path, connection = _load_generated_runtime(package_root, device_id)
+    return _preflight_runtime(
+        root, manifest, backend, mapping_path, connection, device_id,
+        connect_fn=connect_fn,
+    )
+
+
+def preflight_installed_package(
+    store_root: Path,
+    instance_id: str,
+    device_id: str,
+    *,
+    connect_fn: Callable[..., Any] = connect,
+) -> L3ExecutionRecord:
+    """Read state only after resolving an activated immutable Store package."""
+
+    root, manifest, backend, mapping_path, connection, installed_digest = (
+        _load_installed_runtime(store_root, instance_id, device_id)
+    )
+    return _preflight_runtime(
+        root, manifest, backend, mapping_path, connection, device_id,
+        connect_fn=connect_fn,
+        load_source="installed_activation",
+        instance_id=instance_id,
+        installed_package_digest=installed_digest,
+    )
+
+
+def _preflight_runtime(
+    root: Path,
+    manifest: Any,
+    backend: Any,
+    mapping_path: Path,
+    connection: dict[str, Any],
+    device_id: str,
+    *,
+    connect_fn: Callable[..., Any],
+    load_source: str = "explicit_package_root",
+    instance_id: str | None = None,
+    installed_package_digest: str | None = None,
+) -> L3ExecutionRecord:
     robot = _connect_runtime(
         root, manifest, backend, connection, control_enabled=False, connect_fn=connect_fn,
     )
@@ -195,6 +271,9 @@ def preflight_generated_package(
         classification="preflight_read_only",
         motion_sent=False,
         operator=None,
+        load_source=load_source,
+        instance_id=instance_id,
+        installed_package_digest=installed_package_digest,
     )
 
 
@@ -214,12 +293,62 @@ def execute_generated_package_round_trip(
     passing ``authorized=True``.
     """
 
+    root, manifest, backend, mapping_path, connection = _load_generated_runtime(package_root, device_id)
+    return _execute_runtime_round_trip(
+        root, manifest, backend, mapping_path, connection, device_id, target,
+        operator=operator,
+        authorized=authorized,
+        connect_fn=connect_fn,
+    )
+
+
+def execute_installed_package_round_trip(
+    store_root: Path,
+    instance_id: str,
+    device_id: str,
+    target: dict[str, float],
+    *,
+    operator: str,
+    authorized: bool,
+    connect_fn: Callable[..., Any] = connect,
+) -> L3ExecutionRecord:
+    """Run the existing SDK probe/return using one activated Store package."""
+
+    root, manifest, backend, mapping_path, connection, installed_digest = (
+        _load_installed_runtime(store_root, instance_id, device_id)
+    )
+    return _execute_runtime_round_trip(
+        root, manifest, backend, mapping_path, connection, device_id, target,
+        operator=operator,
+        authorized=authorized,
+        connect_fn=connect_fn,
+        load_source="installed_activation",
+        instance_id=instance_id,
+        installed_package_digest=installed_digest,
+    )
+
+
+def _execute_runtime_round_trip(
+    root: Path,
+    manifest: Any,
+    backend: Any,
+    mapping_path: Path,
+    connection: dict[str, Any],
+    device_id: str,
+    target: dict[str, float],
+    *,
+    operator: str,
+    authorized: bool,
+    connect_fn: Callable[..., Any],
+    load_source: str = "explicit_package_root",
+    instance_id: str | None = None,
+    installed_package_digest: str | None = None,
+) -> L3ExecutionRecord:
     if not authorized:
         raise PermissionError("explicit onsite L3 authorization is required")
     if not operator.strip():
         raise ValueError("operator identity is required")
 
-    root, manifest, backend, mapping_path, connection = _load_generated_runtime(package_root, device_id)
     device = manifest.device(device_id)
     joint_names = tuple(joint.get("canonical_name", joint.get("name")) for joint in device.get("joints", []))
     if set(target) != set(joint_names):
@@ -272,4 +401,7 @@ def execute_generated_package_round_trip(
         classification="passed" if passed else "hardware_validation_failed",
         motion_sent=motion_sent,
         operator=operator,
+        load_source=load_source,
+        instance_id=instance_id,
+        installed_package_digest=installed_package_digest,
     )

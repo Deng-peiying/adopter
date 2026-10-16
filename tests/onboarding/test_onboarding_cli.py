@@ -236,6 +236,43 @@ def test_read_only_preflight_cli_has_no_run_root_or_motion(monkeypatch, tmp_path
     assert calls == [(tmp_path / "generated", "right_arm")]
 
 
+def test_preflight_cli_can_resolve_an_activated_installed_package(
+    monkeypatch, tmp_path: Path, capsys,
+) -> None:
+    calls = []
+
+    class Result:
+        def to_dict(self):
+            return {
+                "classification": "preflight_read_only",
+                "load_source": "installed_activation",
+                "motion_sent": False,
+            }
+
+        def write_json(self, path):
+            calls.append(("write", path))
+
+    def fake_preflight(store, instance_id, device_id):
+        calls.append((store, instance_id, device_id))
+        return Result()
+
+    monkeypatch.setattr(
+        "cross_embodiment.onboarding.l3.preflight_installed_package",
+        fake_preflight,
+    )
+    code = main([
+        "onboard", "preflight",
+        "--store", str(tmp_path / "store"),
+        "--instance", "lab/right-arm",
+        "--device", "right_arm",
+        "--json",
+    ])
+
+    assert code == 0
+    assert json.loads(capsys.readouterr().out)["load_source"] == "installed_activation"
+    assert calls == [(tmp_path / "store", "lab/right-arm", "right_arm")]
+
+
 def test_l3_acceptance_cli_requires_exact_interactive_confirmation(monkeypatch, tmp_path: Path, capsys) -> None:
     target_path = tmp_path / "target.yaml"
     target = {f"arm.right.joint.{index}": float(index) for index in range(7)}
@@ -285,6 +322,67 @@ def test_l3_acceptance_cli_requires_exact_interactive_confirmation(monkeypatch, 
     assert calls[0][2] == target
     assert calls[0][3] == {"operator": "robot", "authorized": True}
     assert "L3 acceptance preview" in capsys.readouterr().out
+
+
+def test_l3_acceptance_cli_executes_through_activated_store_package(
+    monkeypatch, tmp_path: Path,
+) -> None:
+    target_path = tmp_path / "target.yaml"
+    target = {f"arm.right.joint.{index}": float(index) for index in range(7)}
+    target_path.write_text(yaml.safe_dump({"positions": target}), encoding="utf-8")
+    calls = []
+
+    class Preview:
+        package_root = tmp_path / "store/packages/hardware/example/arm/1.0.0"
+        package_tree_sha256 = "a" * 64
+        mapping_path = package_root / "config/mapping.yaml"
+        mapping_sha256 = "b" * 64
+        backend_id = "ros2_mapped"
+        backend_entrypoint = "cross_embodiment.driver.ros2_mapped:MappedRos2Adapter"
+        load_source = "installed_activation"
+        instance_id = "lab/right-arm"
+        installed_package_digest = "sha256:" + "c" * 64
+        state_sample = {"status": "ready", "positions": target}
+
+    class Result:
+        classification = "passed"
+
+        def to_dict(self):
+            return {"classification": "passed", "motion_sent": True}
+
+        def write_json(self, path):
+            calls.append(("write", path))
+
+    monkeypatch.setattr(
+        "cross_embodiment.onboarding.l3.preflight_installed_package",
+        lambda store, instance, device: Preview(),
+    )
+
+    def fake_execute(store, instance, device, positions, **kwargs):
+        calls.append((store, instance, device, positions, kwargs))
+        return Result()
+
+    monkeypatch.setattr(
+        "cross_embodiment.onboarding.l3.execute_installed_package_round_trip",
+        fake_execute,
+    )
+    monkeypatch.setattr("builtins.input", lambda prompt: "EXECUTE L3")
+
+    assert main([
+        "onboard", "accept-l3",
+        "--store", str(tmp_path / "store"),
+        "--instance", "lab/right-arm",
+        "--device", "right_arm",
+        "--target", str(target_path),
+        "--operator", "robot",
+    ]) == 0
+    assert calls == [(
+        tmp_path / "store",
+        "lab/right-arm",
+        "right_arm",
+        target,
+        {"operator": "robot", "authorized": True},
+    )]
 
 
 def test_l3_acceptance_cli_rejects_not_ready_before_asking_for_authorization(

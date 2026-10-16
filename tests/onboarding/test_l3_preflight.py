@@ -2,9 +2,18 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
+import shutil
 
 from cross_embodiment.onboarding.generator import PackageGenerator
-from cross_embodiment.onboarding.l3 import execute_generated_package_round_trip, preflight_generated_package
+from cross_embodiment.onboarding.l3 import (
+    execute_generated_package_round_trip,
+    execute_installed_package_round_trip,
+    preflight_generated_package,
+    preflight_installed_package,
+)
+from cross_embodiment.package.artifact import build_package_artifact
+from cross_embodiment.package.lifecycle import PackageLifecycle
+from cross_embodiment.package.manifest import load_package_manifest
 from cross_embodiment.protocol.types import CommandResult, JointState
 from tests.onboarding.test_package_generator import inputs
 
@@ -62,6 +71,31 @@ class _Robot:
             max_joint_error_rad=0.0001,
         )
 
+
+def _installed_runtime(tmp_path: Path) -> tuple[Path, str, Path, str]:
+    coverage, evidence, backend_fit, identity = inputs()
+    source = tmp_path / "generated"
+    PackageGenerator.generate(coverage, evidence, backend_fit, source, identity)
+    package = load_package_manifest(source / "package.yaml")
+    artifact = tmp_path / "runtime.cepack"
+    build_package_artifact(source, artifact)
+    store = tmp_path / "store"
+    lifecycle = PackageLifecycle(store)
+    installed = lifecycle.install(artifact)
+    instance_id = "lab/installed-right-arm"
+    instance = tmp_path / "instance.yaml"
+    instance.write_text(
+        f"""schema_version: robot-instance/v0.1
+instance: {{id: {instance_id}}}
+robot: {{package: {package.name}, version: {package.version}}}
+backend: {{preferred: ros2_mapped}}
+connection: {{domain_id: 7}}
+""",
+        encoding="utf-8",
+    )
+    lifecycle.activate(f"{package.name}@{package.version}", instance)
+    shutil.rmtree(source)
+    return store, instance_id, Path(installed.package_root), installed.package_tree_digest
 
 def test_preflight_loads_only_explicit_generated_package_and_reads_state(tmp_path: Path) -> None:
     coverage, evidence, backend_fit, identity = inputs()
@@ -139,3 +173,51 @@ def test_l3_round_trip_requires_authorization_and_records_both_sdk_moves(tmp_pat
     }
     assert record.commands[1]["result"]["backend_status"] == 4
     assert record.operator == "robot"
+
+
+def test_preflight_resolves_only_activated_package_from_immutable_store(tmp_path: Path) -> None:
+    store, instance_id, installed_root, installed_digest = _installed_runtime(tmp_path)
+    robot = _Robot()
+    calls = []
+
+    def connect_fn(adapter, manifest, **kwargs):
+        calls.append((adapter, manifest, kwargs))
+        return robot
+
+    record = preflight_installed_package(
+        store, instance_id, "right_arm", connect_fn=connect_fn,
+    )
+
+    assert record.load_source == "installed_activation"
+    assert record.instance_id == instance_id
+    assert record.installed_package_digest == installed_digest
+    assert record.package_root == installed_root.resolve()
+    assert record.mapping_path.is_relative_to(installed_root.resolve())
+    assert calls[0][2]["connection"]["package_root"] == str(installed_root.resolve())
+    assert calls[0][2]["connection"]["domain_id"] == 7
+    assert record.state_sample["details"] == {
+        "backend_mode": 104,
+        "backend_fault_code": 0,
+    }
+
+
+def test_installed_round_trip_reuses_existing_sdk_motion_primitive(tmp_path: Path) -> None:
+    store, instance_id, installed_root, installed_digest = _installed_runtime(tmp_path)
+    target = {f"arm.right.joint.{index}": float(index) + 0.1 for index in range(7)}
+
+    record = execute_installed_package_round_trip(
+        store,
+        instance_id,
+        "right_arm",
+        target,
+        operator="robot",
+        authorized=True,
+        connect_fn=lambda *args, **kwargs: _Robot(),
+    )
+
+    assert record.classification == "passed"
+    assert record.load_source == "installed_activation"
+    assert record.instance_id == instance_id
+    assert record.installed_package_digest == installed_digest
+    assert record.package_root == installed_root.resolve()
+    assert len(record.commands) == 2

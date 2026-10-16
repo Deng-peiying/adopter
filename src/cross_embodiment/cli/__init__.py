@@ -439,17 +439,23 @@ def _build_parser() -> argparse.ArgumentParser:
     confirm_policy.add_argument("--json", action="store_true")
     preflight = phases.add_parser(
         "preflight",
-        help="read state through one explicit generated Hardware Package without enabling control",
+        help="read state through an explicit directory or activated installed Hardware Package",
     )
-    preflight.add_argument("--package-root", type=Path, required=True)
+    preflight_source = preflight.add_mutually_exclusive_group(required=True)
+    preflight_source.add_argument("--package-root", type=Path)
+    preflight_source.add_argument("--instance")
+    preflight.add_argument("--store", type=Path)
     preflight.add_argument("--device", required=True)
     preflight.add_argument("--output", type=Path)
     preflight.add_argument("--json", action="store_true")
     accept_l3 = phases.add_parser(
         "accept-l3",
-        help="operator-confirmed single target and return through one explicit generated package",
+        help="operator-confirmed target and return through an explicit or activated package",
     )
-    accept_l3.add_argument("--package-root", type=Path, required=True)
+    accept_source = accept_l3.add_mutually_exclusive_group(required=True)
+    accept_source.add_argument("--package-root", type=Path)
+    accept_source.add_argument("--instance")
+    accept_l3.add_argument("--store", type=Path)
     accept_l3.add_argument("--device", required=True)
     accept_l3.add_argument("--target", type=Path, required=True)
     accept_l3.add_argument("--operator", required=True)
@@ -554,22 +560,44 @@ def _onboard(args) -> int:
         _emit_onboarding(payload, args.json)
         return 0 if result.conformance_passed else 14
     if args.onboard_phase == "preflight":
-        from ..onboarding.l3 import preflight_generated_package
+        from ..onboarding.l3 import (
+            preflight_generated_package,
+            preflight_installed_package,
+        )
 
-        record = preflight_generated_package(args.package_root, args.device)
+        if args.instance is not None:
+            record = preflight_installed_package(
+                _package_store(args.store), args.instance, args.device,
+            )
+        else:
+            if args.store is not None:
+                raise ValueError("--store requires --instance")
+            record = preflight_generated_package(args.package_root, args.device)
         if args.output is not None:
             record.write_json(args.output)
         _emit_onboarding(record.to_dict(), args.json)
         return 0
     if args.onboard_phase == "accept-l3":
-        from ..onboarding.l3 import execute_generated_package_round_trip, preflight_generated_package
+        from ..onboarding.l3 import (
+            execute_generated_package_round_trip,
+            execute_installed_package_round_trip,
+            preflight_generated_package,
+            preflight_installed_package,
+        )
 
         target_document = yaml.safe_load(args.target.read_text(encoding="utf-8")) or {}
         positions = target_document.get("positions") if isinstance(target_document, dict) else None
         if not isinstance(positions, dict) or not positions:
             raise ValueError("L3 target file must contain a non-empty positions mapping")
         positions = {str(name): float(value) for name, value in positions.items()}
-        preview = preflight_generated_package(args.package_root, args.device)
+        if args.instance is not None:
+            store = _package_store(args.store)
+            preview = preflight_installed_package(store, args.instance, args.device)
+        else:
+            if args.store is not None:
+                raise ValueError("--store requires --instance")
+            store = None
+            preview = preflight_generated_package(args.package_root, args.device)
         if preview.state_sample.get("status") != "ready":
             details = preview.state_sample.get("details") or {}
             raise ValueError(
@@ -586,6 +614,11 @@ def _onboard(args) -> int:
             "mapping_sha256": preview.mapping_sha256,
             "backend_id": preview.backend_id,
             "backend_entrypoint": preview.backend_entrypoint,
+            "load_source": getattr(preview, "load_source", "explicit_package_root"),
+            "instance_id": getattr(preview, "instance_id", None),
+            "installed_package_digest": getattr(
+                preview, "installed_package_digest", None,
+            ),
             "device_id": args.device,
             "current_state": preview.state_sample,
             "probe_target": positions,
@@ -596,13 +629,23 @@ def _onboard(args) -> int:
         if confirmation.strip() != "EXECUTE L3":
             print("L3 acceptance cancelled; no motion command sent.")
             return 2
-        record = execute_generated_package_round_trip(
-            args.package_root,
-            args.device,
-            positions,
-            operator=args.operator,
-            authorized=True,
-        )
+        if args.instance is not None:
+            record = execute_installed_package_round_trip(
+                store,
+                args.instance,
+                args.device,
+                positions,
+                operator=args.operator,
+                authorized=True,
+            )
+        else:
+            record = execute_generated_package_round_trip(
+                args.package_root,
+                args.device,
+                positions,
+                operator=args.operator,
+                authorized=True,
+            )
         if args.output is not None:
             record.write_json(args.output)
         _emit_onboarding(record.to_dict(), args.json)
