@@ -218,6 +218,9 @@ def test_public_factory_enforces_motion_permission_for_move_and_command(tmp_path
     store, instance_id, _ = _install_and_activate(tmp_path)
     target = {"arm.joint.0": 0.1, "arm.joint.1": -0.1}
     read_only = Robot.from_instance(instance_id, store=store)
+    # The SDK permission is authoritative even if a Backend exposes or mutates
+    # its own similarly named flag.
+    read_only.adapter.control_enabled = True
 
     with pytest.raises(SafetyViolation, match="disabled"):
         read_only.move_joints("arm", target)

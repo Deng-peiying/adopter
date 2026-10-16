@@ -64,10 +64,22 @@ class Robot:
         manifest: EmbodimentManifest,
         *,
         runtime_info: RuntimeInfo | None = None,
+        allow_motion: bool | None = None,
+        dry_run: bool | None = None,
     ) -> None:
         self.adapter = adapter
         self.manifest = manifest
         self.runtime_info = runtime_info
+        self._allow_motion = (
+            bool(getattr(adapter, "control_enabled", True))
+            if allow_motion is None
+            else bool(allow_motion)
+        )
+        self._dry_run = (
+            bool(getattr(adapter, "dry_run", False))
+            if dry_run is None
+            else bool(dry_run)
+        )
         self.lifecycle = Lifecycle(adapter)
 
     @classmethod
@@ -147,8 +159,8 @@ class Robot:
                 command,
                 state,
                 self.manifest,
-                control_enabled=getattr(self.adapter, "control_enabled", True),
-                dry_run=getattr(self.adapter, "dry_run", False),
+                control_enabled=self._allow_motion,
+                dry_run=self._dry_run,
             )
             mapped = ActionMapper().map(command, self.manifest)
             return [self.adapter.send_command(item) for item in mapped]
@@ -177,7 +189,12 @@ def connect(
         raise ValueError("A manifest is required")
     loaded = load_manifest(manifest) if isinstance(manifest, (str, Path)) else manifest
     if adapter == "mock":
-        return Robot(MockAdapter(loaded), loaded)
+        return Robot(
+            MockAdapter(loaded),
+            loaded,
+            allow_motion=control_enabled,
+            dry_run=dry_run,
+        )
     if callable(adapter):
         options = dict(connection or {})
         options["manage_process"] = bool(options.get("manage_process", manage_process))
@@ -187,5 +204,10 @@ def connect(
             control_enabled=control_enabled,
             dry_run=dry_run,
         )
-        return Robot(adapter_impl, loaded)
+        return Robot(
+            adapter_impl,
+            loaded,
+            allow_motion=control_enabled,
+            dry_run=dry_run,
+        )
     raise ValueError(f"Adapter '{adapter}' is not installed or was not loaded from a Hardware Package")
