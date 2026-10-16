@@ -54,6 +54,33 @@ Starting a driver, enabling a device, opening a Robot session, and permitting
 control remain separate explicit runtime operations. Package installation never
 performs them.
 
+## Application runtime boundary
+
+After activation, an application can open the installed instance through the
+public `Robot.from_instance()` factory:
+
+```python
+from cross_embodiment import Robot
+
+with Robot.from_instance(
+    "lab/right-arm-01",
+    store="/path/to/store",
+    allow_motion=False,
+) as robot:
+    state = robot.get_joint_state("right_arm")
+```
+
+Factory construction validates the immutable Store package and constructs its
+declared Backend without connecting it. Context entry explicitly connects to
+an already running Driver. The default `allow_motion=False` permits state reads
+and blocks every public Action before dispatch.
+
+Driver Lifecycle remains an independent extension boundary. A future package
+may declare an audited external process, managed child process, or managed
+service and expose explicit `status/start/stop/health` operations. The current
+factory does not start or stop a Driver, and `Robot.connect()` does not enable a
+physical device.
+
 ## Store layout
 
 ```text

@@ -18,6 +18,13 @@ activation digest, selected Backend, embodiment manifest, and Mapping asset
 before constructing the existing mapped ROS2 Adapter. It does not search the
 legacy Registry or a generated package directory.
 
+The installed commands and public `Robot.from_instance()` use the same
+shared installed Runtime loader. There is one implementation for Store resolution,
+Mapping validation, Backend loading, and Robot construction. Preflight creates
+that Robot with `allow_motion=False`; L3 constructs a motion-capable Robot only
+after the explicit authorization and target checks. Neither path starts a
+Driver or enables hardware.
+
 ## Commands
 
 ```bash

@@ -419,6 +419,60 @@ connection: {}
 
 ## 5. Unified Robot API
 
+### 从已激活的 Robot Instance 创建 Robot
+
+应用程序通过 `Robot.from_instance()` 使用已安装并激活的 Hardware Package。创建
+对象会验证 Store、Package、Mapping 和 Backend 摘要并构造 Adapter，但不会连接
+Driver：
+
+```python
+from cross_embodiment import Robot
+
+robot = Robot.from_instance(
+    "lab/robot-01",
+    store="/path/to/store",
+    allow_motion=False,
+)
+
+with robot:
+    state = robot.get_joint_state("right_arm")
+    print(state.positions)
+    print(robot.runtime_info.to_dict())
+```
+
+`Robot.from_instance()` 不会启动厂商 Driver；`robot.connect()` 不会使能机器人。
+Driver 启动和厂商硬件使能必须在部署层分别显式完成。当前 Weiyi Package 声明
+`manage_process=false`，SDK 只连接已运行的 ROS2 Driver。
+
+`allow_motion=False` 是默认强制门禁。只读 Robot 可以连接和读取状态，但
+`move_joints()` 与通用 `command()` 都会在 Backend 发送前拒绝动作。需要发送经过审查
+的标准关节命令时，应用必须显式创建动作会话：
+
+```python
+from cross_embodiment import Robot
+
+with Robot.from_instance(
+    "lab/robot-01",
+    store="/path/to/store",
+    allow_motion=True,
+) as robot:
+    state = robot.get_joint_state("right_arm")
+    if state.status != "ready":
+        raise RuntimeError(f"right_arm is {state.status}: {state.details}")
+
+    # 厂商接口接收完整绝对关节目标。修改一个关节时仍需保留其余实测值。
+    target = dict(state.positions)
+    target["arm.right.joint.6"] = 0.17
+    result = robot.move_joints("right_arm", target)
+    if result.status != "succeeded" or result.arrival_confirmed is not True:
+        raise RuntimeError(f"motion failed: {result}")
+```
+
+`allow_motion=True` 只解除 SDK 动作权限门禁，不启动 Driver、不调用厂商使能服务，也
+不跳过状态新鲜度、Ready、故障、关节名称、关节限位、Mapping 或 Backend 校验。
+
+### 当前关节接口
+
 当前冻结的关节 API：
 
 ```python
@@ -477,7 +531,14 @@ def execute_known_target(robot: Robot, target: dict[str, float]) -> None:
         raise RuntimeError(f"motion failed: {result}")
 ```
 
-`cross_embodiment.connect()` 是 Backend 集成使用的低层入口，需要显式传入 Manifest 与 Adapter callable。v0.1 尚未提供公共 `Robot.from_package(...)` 工厂。安装 Package 后的正式加载路径由 `ce package use`、`ce onboard preflight` 和 `ce onboard accept-l3` 完成，内部会验证 Package、Mapping、Backend 和 Store 摘要后创建 `Robot`。
+`cross_embodiment.connect()` 是 Backend 集成使用的低层入口，需要显式传入 Manifest
+与 Adapter callable。普通应用使用 `Robot.from_instance()`；它与
+`ce onboard preflight`、`ce onboard accept-l3` 共用同一个 Installed Runtime loader，
+不会维护第二套 Package Store、Mapping 或 Backend 装配逻辑。
+
+Driver Lifecycle 是独立的未来扩展层。后续可由 Hardware Package 声明经过审查的
+外部进程、受管进程或系统服务描述，再通过独立的 `status/start/stop/health` 接口
+显式管理。本版本不提供该接口，也不把 Driver 启动或硬件使能塞入 `Robot.connect()`。
 
 ## 6. 已安装 Package 的运行命令
 
@@ -561,6 +622,7 @@ DeepSeek 模式需要 `cross-embodiment[onboarding-agent]` 可选依赖和本地
 - [Hardware Onboarding 工作流](docs/onboarding/workflow.md)
 - [新厂商接入手册](docs/onboarding/new-vendor-runbook.md)
 - [Evidence Policy](docs/onboarding/evidence-policy.md)
+- [Weiyi L3 真机验收手册](docs/onboarding/weiyi-l3-runbook.md)
 - [Hardware Package 生命周期](docs/package-lifecycle.md)
 - [Unified SDK v0.1 抽象冻结审计](docs/release/unified-sdk-v0.1-abstraction-freeze-audit-2026-10-16.md)
 
@@ -578,7 +640,7 @@ DeepSeek 模式需要 `cross-embodiment[onboarding-agent]` 可选依赖和本地
 | 通用 Python SDK Backend | 未验证 |
 | 通用 C/C++ Native Backend | 未验证 |
 | 自动生成并注册全新 Backend 插件 | 未验证 |
-| 公共 `Robot.from_package(...)` 工厂 | 尚未实现 |
+| 公共 `Robot.from_instance(...)` 工厂 | 已实现；默认只读，不管理 Driver |
 
 ## 10. 安全和生命周期规则
 
