@@ -60,14 +60,21 @@ Runtime、CAN/DDS 配置和已连接的机器人。这些不包在 `.cepack` 中
 七关节状态。它不发送关节目标。授权运动的 L3 验收是独立入口，不属于安装
 成功条件。
 
+`preflight` 退出时会停止由它临时启动的 Driver。普通业务程序运行时，需要在另一个
+终端按照厂商 Runtime 文档保持 Driver 运行，并由操作员完成必要使能；SDK 不会自动
+启动 Driver 或使能机器人。
+
 ### 业务程序使用统一 API
 
-先使用 Kit 安装的 Python 环境运行你的程序：
+`package_dpy` Kit 已提供真实存在的只读示例。确认厂商 Driver 正在运行、机器人
+处于 Ready 状态后，在 Kit 根目录执行：
 
 ```bash
-source "${XDG_DATA_HOME:-$HOME/.local/share}/cross-embodiment/weiyi-dual-o6-right-arm/venv/bin/activate"
-python your_app.py
+VENV="${XDG_DATA_HOME:-$HOME/.local/share}/cross-embodiment/weiyi-dual-o6-right-arm/venv"
+"$VENV/bin/python" examples/read_joint_state.py
 ```
+
+该示例使用 `allow_motion=False`，只读取状态，不发送运动命令。它的核心代码如下：
 
 ```python
 from cross_embodiment import Robot
