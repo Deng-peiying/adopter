@@ -66,15 +66,43 @@ Runtime、CAN/DDS 配置和已连接的机器人。这些不包在 `.cepack` 中
 
 ### 业务程序使用统一 API
 
-`package_dpy` Kit 已提供真实存在的只读示例。确认厂商 Driver 正在运行、机器人
-处于 Ready 状态后，在 Kit 根目录执行：
+`package_dpy` Kit 已提供真实存在的只读示例。`preflight` 退出后 Driver 已停止，
+因此日常业务程序应使用两个终端：
+
+终端 A 持续运行与验收流程相同的外部 Driver：
 
 ```bash
+export VENDOR_ROOT=/path/to/robot_launch
+cd "$VENDOR_ROOT"
+source setup.sh
+DRIVER_CONFIG="$VENDOR_ROOT/third_party/wy_arm_sdk/install/arm_control_system/share/arm_control_system/config/dual_arm_system.yaml"
+
+ros2 run arm_control_system arm_system_node --ros-args \
+  -r __ns:=/wy_robot1 \
+  --params-file "$DRIVER_CONFIG" \
+  -p arm_list:="['left_arm', 'right_arm']" \
+  -p can_port:="[2, 3]" \
+  --log-level info
+```
+
+该命令保持前台运行，结束使用时按 `Ctrl+C`。终端 B 加载相同环境、显式使能右臂，
+然后在 Kit 根目录运行公共 SDK 示例：
+
+```bash
+export VENDOR_ROOT=/path/to/robot_launch
+source "$VENDOR_ROOT/setup.sh"
+
+ros2 service call /wy_robot1/right_arm_set_power \
+  arm_control_interface/srv/SetPower \
+  "{power_enable: true}"
+
+cd /path/to/weiyi-dual-o6-right-arm
 VENV="${XDG_DATA_HOME:-$HOME/.local/share}/cross-embodiment/weiyi-dual-o6-right-arm/venv"
 "$VENV/bin/python" examples/read_joint_state.py
 ```
 
-该示例使用 `allow_motion=False`，只读取状态，不发送运动命令。它的核心代码如下：
+`SetPower` 改变控制器使能状态但不发送关节目标。等待 mode 104 后，该示例使用
+`allow_motion=False` 只读取状态，不发送运动命令。它的核心代码如下：
 
 ```python
 from cross_embodiment import Robot
