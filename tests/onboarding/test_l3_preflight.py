@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 import shutil
 
+import cross_embodiment.onboarding.l3 as l3_module
 from cross_embodiment.onboarding.generator import PackageGenerator
 from cross_embodiment.onboarding.l3 import (
     execute_generated_package_round_trip,
@@ -15,6 +16,7 @@ from cross_embodiment.package.artifact import build_package_artifact
 from cross_embodiment.package.lifecycle import PackageLifecycle
 from cross_embodiment.package.manifest import load_package_manifest
 from cross_embodiment.protocol.types import CommandResult, JointState
+from cross_embodiment.runtime.installed import resolve_installed_runtime
 from tests.onboarding.test_package_generator import inputs
 
 
@@ -221,3 +223,33 @@ def test_installed_round_trip_reuses_existing_sdk_motion_primitive(tmp_path: Pat
     assert record.installed_package_digest == installed_digest
     assert record.package_root == installed_root.resolve()
     assert len(record.commands) == 2
+
+
+def test_installed_l3_paths_use_the_shared_runtime_resolver(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    store, instance_id, _, _ = _installed_runtime(tmp_path)
+    calls = []
+
+    def recording_resolver(requested_instance, requested_store):
+        calls.append((requested_instance, Path(requested_store)))
+        return resolve_installed_runtime(requested_instance, requested_store)
+
+    monkeypatch.setattr(l3_module, "resolve_installed_runtime", recording_resolver)
+    preflight_installed_package(
+        store,
+        instance_id,
+        "right_arm",
+        connect_fn=lambda *args, **kwargs: _Robot(),
+    )
+    execute_installed_package_round_trip(
+        store,
+        instance_id,
+        "right_arm",
+        {f"arm.right.joint.{index}": float(index) + 0.1 for index in range(7)},
+        operator="robot",
+        authorized=True,
+        connect_fn=lambda *args, **kwargs: _Robot(),
+    )
+
+    assert calls == [(instance_id, store), (instance_id, store)]

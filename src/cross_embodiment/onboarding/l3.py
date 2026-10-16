@@ -12,8 +12,8 @@ import yaml
 
 from ..driver.backend import load_backend_entrypoint
 from ..hardware.manifest import load_manifest
-from ..package.lifecycle import PackageLifecycle
 from ..package.manifest import PlatformInfo, load_package_manifest
+from ..runtime.installed import ResolvedInstalledRuntime, resolve_installed_runtime
 from ..sdk.robot import connect
 
 
@@ -137,38 +137,6 @@ def _load_generated_runtime(package_root: Path, device_id: str) -> tuple[Path, A
     return root, manifest, backend, mapping_path, connection
 
 
-def _load_installed_runtime(
-    store_root: Path,
-    instance_id: str,
-    device_id: str,
-) -> tuple[Path, Any, Any, Path, dict[str, Any], str]:
-    """Resolve one activated package and retain its immutable Store provenance."""
-
-    use = PackageLifecycle(store_root).resolve_use(instance_id)
-    root, manifest, backend, mapping_path, _ = _load_generated_runtime(
-        use.package_root, device_id,
-    )
-    if root != use.package_root.resolve():
-        raise ValueError("activated package root differs from the verified SDK Store root")
-    package = load_package_manifest(root / "package.yaml")
-    declared_manifest = (root / str(package.embodiment_manifest)).resolve()
-    if use.manifest_path.resolve() != declared_manifest:
-        raise ValueError("activated embodiment manifest differs from the installed package")
-    if backend.id != use.backend_id or backend.entrypoint != use.backend_entrypoint:
-        raise ValueError("activated Backend differs from the installed package selection")
-
-    connection = dict(use.connection)
-    if Path(str(connection.get("package_root", ""))).resolve() != root:
-        raise ValueError("activated connection does not reference the installed package root")
-    mapping_value = Path(str(connection.get("mapping_path", "")))
-    if not mapping_value.parts or mapping_value.is_absolute() or ".." in mapping_value.parts:
-        raise ValueError("activated mapping path must stay inside the installed package")
-    activated_mapping = (root / mapping_value).resolve()
-    if activated_mapping != mapping_path:
-        raise ValueError("activated mapping differs from the installed package asset")
-    return root, manifest, backend, mapping_path, connection, use.package_tree_digest
-
-
 def _connect_runtime(
     root: Path,
     manifest: Any,
@@ -223,16 +191,32 @@ def preflight_installed_package(
 ) -> L3ExecutionRecord:
     """Read state only after resolving an activated immutable Store package."""
 
-    root, manifest, backend, mapping_path, connection, installed_digest = (
-        _load_installed_runtime(store_root, instance_id, device_id)
-    )
-    return _preflight_runtime(
-        root, manifest, backend, mapping_path, connection, device_id,
-        connect_fn=connect_fn,
+    resolved = _installed_l3_runtime(store_root, instance_id, device_id)
+    robot = resolved.create_robot(allow_motion=False, connect_fn=connect_fn)
+    return _preflight_robot(
+        resolved.package_root,
+        resolved.manifest,
+        resolved.backend,
+        resolved.info.mapping_path,
+        device_id,
+        robot,
         load_source="installed_activation",
         instance_id=instance_id,
-        installed_package_digest=installed_digest,
+        installed_package_digest=resolved.info.package_tree_digest,
     )
+
+
+def _installed_l3_runtime(
+    store_root: Path,
+    instance_id: str,
+    device_id: str,
+) -> ResolvedInstalledRuntime:
+    resolved = resolve_installed_runtime(instance_id, store_root)
+    if resolved.manifest.device(device_id) is None:
+        raise ValueError(f"installed package does not expose device {device_id!r}")
+    if resolved.info.mapping_path is None:
+        raise ValueError("installed L3 validation requires a declared interface Mapping")
+    return resolved
 
 
 def _preflight_runtime(
@@ -251,6 +235,31 @@ def _preflight_runtime(
     robot = _connect_runtime(
         root, manifest, backend, connection, control_enabled=False, connect_fn=connect_fn,
     )
+    return _preflight_robot(
+        root,
+        manifest,
+        backend,
+        mapping_path,
+        device_id,
+        robot,
+        load_source=load_source,
+        instance_id=instance_id,
+        installed_package_digest=installed_package_digest,
+    )
+
+
+def _preflight_robot(
+    root: Path,
+    manifest: Any,
+    backend: Any,
+    mapping_path: Path,
+    device_id: str,
+    robot: Any,
+    *,
+    load_source: str = "explicit_package_root",
+    instance_id: str | None = None,
+    installed_package_digest: str | None = None,
+) -> L3ExecutionRecord:
     try:
         robot.lifecycle.connect()
         state = robot.get_joint_state(device_id)
@@ -314,17 +323,28 @@ def execute_installed_package_round_trip(
 ) -> L3ExecutionRecord:
     """Run the existing SDK probe/return using one activated Store package."""
 
-    root, manifest, backend, mapping_path, connection, installed_digest = (
-        _load_installed_runtime(store_root, instance_id, device_id)
-    )
-    return _execute_runtime_round_trip(
-        root, manifest, backend, mapping_path, connection, device_id, target,
+    resolved = _installed_l3_runtime(store_root, instance_id, device_id)
+    joint_names, full_target = _validate_round_trip_request(
+        resolved.manifest,
+        device_id,
+        target,
         operator=operator,
         authorized=authorized,
-        connect_fn=connect_fn,
+    )
+    robot = resolved.create_robot(allow_motion=True, connect_fn=connect_fn)
+    return _execute_robot_round_trip(
+        resolved.package_root,
+        resolved.manifest,
+        resolved.backend,
+        resolved.info.mapping_path,
+        device_id,
+        joint_names,
+        full_target,
+        robot,
+        operator=operator,
         load_source="installed_activation",
         instance_id=instance_id,
-        installed_package_digest=installed_digest,
+        installed_package_digest=resolved.info.package_tree_digest,
     )
 
 
@@ -344,19 +364,47 @@ def _execute_runtime_round_trip(
     instance_id: str | None = None,
     installed_package_digest: str | None = None,
 ) -> L3ExecutionRecord:
-    if not authorized:
-        raise PermissionError("explicit onsite L3 authorization is required")
-    if not operator.strip():
-        raise ValueError("operator identity is required")
-
-    device = manifest.device(device_id)
-    joint_names = tuple(joint.get("canonical_name", joint.get("name")) for joint in device.get("joints", []))
-    if set(target) != set(joint_names):
-        raise ValueError(f"L3 target must contain exactly {sorted(joint_names)}")
-    full_target = {name: float(target[name]) for name in joint_names}
+    joint_names, full_target = _validate_round_trip_request(
+        manifest,
+        device_id,
+        target,
+        operator=operator,
+        authorized=authorized,
+    )
     robot = _connect_runtime(
         root, manifest, backend, connection, control_enabled=True, connect_fn=connect_fn,
     )
+    return _execute_robot_round_trip(
+        root,
+        manifest,
+        backend,
+        mapping_path,
+        device_id,
+        joint_names,
+        full_target,
+        robot,
+        operator=operator,
+        load_source=load_source,
+        instance_id=instance_id,
+        installed_package_digest=installed_package_digest,
+    )
+
+
+def _execute_robot_round_trip(
+    root: Path,
+    manifest: Any,
+    backend: Any,
+    mapping_path: Path,
+    device_id: str,
+    joint_names: tuple[str, ...],
+    full_target: dict[str, float],
+    robot: Any,
+    *,
+    operator: str,
+    load_source: str = "explicit_package_root",
+    instance_id: str | None = None,
+    installed_package_digest: str | None = None,
+) -> L3ExecutionRecord:
     commands: list[dict[str, Any]] = []
     motion_sent = False
     try:
@@ -405,3 +453,25 @@ def _execute_runtime_round_trip(
         instance_id=instance_id,
         installed_package_digest=installed_package_digest,
     )
+
+
+def _validate_round_trip_request(
+    manifest: Any,
+    device_id: str,
+    target: dict[str, float],
+    *,
+    operator: str,
+    authorized: bool,
+) -> tuple[tuple[str, ...], dict[str, float]]:
+    if not authorized:
+        raise PermissionError("explicit onsite L3 authorization is required")
+    if not operator.strip():
+        raise ValueError("operator identity is required")
+    device = manifest.device(device_id)
+    joint_names = tuple(
+        joint.get("canonical_name", joint.get("name"))
+        for joint in device.get("joints", [])
+    )
+    if set(target) != set(joint_names):
+        raise ValueError(f"L3 target must contain exactly {sorted(joint_names)}")
+    return joint_names, {name: float(target[name]) for name in joint_names}
