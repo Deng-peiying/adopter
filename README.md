@@ -31,6 +31,10 @@ cd weiyi-dual-o6-right-arm
 ./verify.sh
 ```
 
+如果系统只有 Ubuntu 自带的 PyYAML 5.4.1，`install.sh` 会通过当前 pip 配置在
+Kit venv 中安装 PyYAML 6.x。离线部署应先配置内部 Package Index 或提供经过审核的
+PyYAML wheel，再运行安装脚本。
+
 `install.sh` 只安装 wheel、`.cepack` 并激活 Robot Instance。`verify.sh` 默认只做
 摘要、Store、实例绑定和平台检查。两者都不启动 Driver、不使能、不连接
 机器人，也不发送动作。
