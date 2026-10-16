@@ -22,7 +22,7 @@
     "sdk_mapping_transport_semantics_modified_for_l3": false
   },
   "gate_d": {
-    "archive_root": "/home/robot/文档/for_robot_dpy/onboarding-evidence/weiyi-right-arm-20261015-gate-d",
+    "archive_root": "onboarding-evidence/weiyi-right-arm-20261015-gate-d",
     "sha256_manifest": "9eecb807b7f234a9200bcea3645cf4c4e002f9e318055e7e855843187e136975",
     "archived_file_count": 46,
     "full_scan": {
@@ -43,7 +43,7 @@
     "candidate_mapping_sha256": "540b14e082d2b3a41883ca221d479636b14afcf52787980b20b43ed6b88cfb4b"
   },
   "gate_e": {
-    "archive_root": "/home/robot/文档/for_robot_dpy/onboarding-evidence/weiyi-right-arm-20261015-gate-e",
+    "archive_root": "onboarding-evidence/weiyi-right-arm-20261015-gate-e",
     "runtime_policy_sha256": "786ad9bf3f18691bd3670f25046f1ec1c7828a5ed09aec320a3a06ba99a0207e",
     "runtime_policy_source": "previously_live_validated_runtime_policy",
     "runtime_policy_vendor_declared": false,

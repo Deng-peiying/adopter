@@ -409,7 +409,7 @@ Task 14 completes only after explicit onsite authorization. Success proves the w
 ## Final Verification Commands
 
 ```bash
-cd /home/robot/文档/for_robot_dpy/.worktrees/body-aware-robot-agent-mvp/cross-embody-sdk
+cd cross-embody-sdk
 python3 -m pytest tests/onboarding -v
 python3 -m pytest tests/unit tests/integration tests/mock -v
 python3 -m cross_embodiment.cli onboard validate \

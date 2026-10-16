@@ -10,7 +10,7 @@ L1 and L2 completed without sending a motion command. Gate D and its 638-record
 evidence replay are archived under:
 
 ```text
-~/文档/for_robot_dpy/onboarding-evidence/weiyi-right-arm-20261015-gate-d
+<evidence-root>/weiyi-right-arm-20261015-gate-d
 provider transcript sha256:4855dfe2450f15e913fdc7b1b508224314c9c6dd86c818703f5938bdca564f2b
 ```
 
@@ -32,11 +32,10 @@ candidate and its interface evidence, writes a separate policy record, creates
 `hardware-package-runtime`, and sends no ROS request:
 
 ```bash
-cd ~/文档/for_robot_dpy/.worktrees/body-aware-robot-agent-mvp/cross-embody-sdk
-export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
+: "${GATE_D_RUN_ROOT:?set GATE_D_RUN_ROOT to the sealed Gate D run directory}"
 
-python3.10 -m cross_embodiment.cli onboard confirm-policy \
-  --run-root /tmp/ce-onboarding/weiyi-right-arm-20261015-gate-d-real-1-offline-replay \
+ce onboard confirm-policy \
+  --run-root "$GATE_D_RUN_ROOT" \
   --timeout-s 90 \
   --arrival-tolerance-rad 0.015 \
   --settle-window-s 1.0 \
@@ -49,7 +48,7 @@ python3.10 -m cross_embodiment.cli onboard confirm-policy \
 The sealed runtime package used below is:
 
 ```text
-~/文档/for_robot_dpy/onboarding-evidence/weiyi-right-arm-20261015-gate-e/hardware-package-runtime
+<evidence-root>/weiyi-right-arm-20261015-gate-e/hardware-package-runtime
 candidate package sha256:2ca45703f74a3005a5d57cf5d8d23aca255cb2dadf3140e3064f92acbe0d846c
 runtime policy sha256:786ad9bf3f18691bd3670f25046f1ec1c7828a5ed09aec320a3a06ba99a0207e
 runtime mapping sha256:f9bbd83f1c7de63869a912f0cf2bea08a140b0d5de14bc7b5eec4f569a3a7b17
@@ -64,7 +63,8 @@ retained as the reproducible procedure.
 ## Terminal 1: start the vendor runtime
 
 ```bash
-cd ~/文档/for_robot_dpy/robot_launch
+: "${VENDOR_RUNTIME_ROOT:?set VENDOR_RUNTIME_ROOT to the installed Weiyi runtime}"
+cd "$VENDOR_RUNTIME_ROOT"
 conda deactivate 2>/dev/null || true
 source setup.sh
 ros2 launch robot_bringup dual_arm_hand.launch.py
@@ -76,7 +76,8 @@ SDK, Agent, Calibration, or L3 motion entry point, run the separate enable
 operation in another terminal:
 
 ```bash
-cd ~/文档/for_robot_dpy/robot_launch
+: "${VENDOR_RUNTIME_ROOT:?set VENDOR_RUNTIME_ROOT to the installed Weiyi runtime}"
+cd "$VENDOR_RUNTIME_ROOT"
 conda deactivate 2>/dev/null || true
 export ROS_LOCALHOST_ONLY=1
 export ROS_DOMAIN_ID=0
@@ -101,15 +102,15 @@ It accepts only an explicit package directory; it does not search a registry,
 cache, project, or default package location.
 
 ```bash
-cd ~/文档/for_robot_dpy/.worktrees/body-aware-robot-agent-mvp/cross-embody-sdk
+: "${VENDOR_RUNTIME_ROOT:?set VENDOR_RUNTIME_ROOT to the installed Weiyi runtime}"
+: "${GATE_E_PACKAGE_ROOT:?set GATE_E_PACKAGE_ROOT to the sealed runtime package}"
 conda deactivate 2>/dev/null || true
-source ~/文档/for_robot_dpy/robot_launch/setup.sh
-export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
+source "$VENDOR_RUNTIME_ROOT/setup.sh"
 export ROS_LOG_DIR=/tmp/ce-onboarding/ros-log
 mkdir -p "$ROS_LOG_DIR"
 
-python3.10 -m cross_embodiment.cli onboard preflight \
-  --package-root "$HOME/文档/for_robot_dpy/onboarding-evidence/weiyi-right-arm-20261015-gate-e/hardware-package-runtime" \
+ce onboard preflight \
+  --package-root "$GATE_E_PACKAGE_ROOT" \
   --device right_arm \
   --output /tmp/ce-onboarding/weiyi-right-arm-20261015-gate-e-preflight.json \
   --json
@@ -162,15 +163,15 @@ resolved, the physical workspace is checked, and the onsite operator has the
 existing hardware stop available.
 
 ```bash
-cd ~/文档/for_robot_dpy/.worktrees/body-aware-robot-agent-mvp/cross-embody-sdk
+: "${VENDOR_RUNTIME_ROOT:?set VENDOR_RUNTIME_ROOT to the installed Weiyi runtime}"
+: "${GATE_E_PACKAGE_ROOT:?set GATE_E_PACKAGE_ROOT to the sealed runtime package}"
 conda deactivate 2>/dev/null || true
-source ~/文档/for_robot_dpy/robot_launch/setup.sh
-export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
+source "$VENDOR_RUNTIME_ROOT/setup.sh"
 export ROS_LOG_DIR=/tmp/ce-onboarding/ros-log
 mkdir -p "$ROS_LOG_DIR"
 
-python3.10 -m cross_embodiment.cli onboard accept-l3 \
-  --package-root "$HOME/文档/for_robot_dpy/onboarding-evidence/weiyi-right-arm-20261015-gate-e/hardware-package-runtime" \
+ce onboard accept-l3 \
+  --package-root "$GATE_E_PACKAGE_ROOT" \
   --device right_arm \
   --target /tmp/ce-onboarding/weiyi-right-arm-20261015-gate-e-target.yaml \
   --operator robot \

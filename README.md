@@ -1,6 +1,8 @@
 # Cross-Embodiment SDK
 
-本仓库是跨本体 SDK Core：提供通用 Manifest、Robot/Device/Capability、Action/Observation、Runtime、安全校验、Mock Adapter、Package Resolver、Registry 客户端和 `ce` CLI。当前设计基准为 [`v0.3`](docs/architecture/cross-embodiment-sdk-design-v0.3.md)。
+本仓库发布统一的 Cross-Embodiment SDK 平台：Unified Robot Runtime、Hardware
+Onboarding Agent、Hardware Package Lifecycle，以及它们共用的 `ce` CLI。当前设计
+基准为 [`v0.3`](docs/architecture/cross-embodiment-sdk-design-v0.3.md)。
 
 Core 的源码按 v0.3 的职责边界组织：
 
@@ -13,6 +15,7 @@ src/cross_embodiment/
 ├── backend/      # 与 ROS/Python/Native 无关的传输协议
 ├── hardware/     # Embodiment Manifest、Robot Instance
 ├── package/      # Package Manifest、Registry、Resolver、Lock
+├── onboarding/   # Scanner、Evidence、Matcher、Agent、Generator、Conformance
 ├── adapter/      # Adapter Contract 与通用 Mock
 ├── driver/       # ROS2 Transport、Backend 加载、健康状态、进程托管
 └── cli/          # ce 命令实现
@@ -34,7 +37,7 @@ for_robot_dpy/
 ## 本地开发和 WY 项目
 
 ```bash
-cd /home/robot/文档/for_robot_dpy/cross-embody-sdk
+cd cross-embody-sdk
 python3 -m pip install -e .
 
 ce install --project ../wy-dual-o6-demo/project.yaml --registry ..
@@ -87,6 +90,20 @@ Native 路径需要 ROS 2 Humble、主机依赖、正确配置的 CAN 接口及�
 并执行 L1/L2/L3 分级验收。接入新机器人时不修改 Unified Robot API；厂商差异
 进入 Hardware Package，新的通信机制才进入 Backend 插件。
 
+wheel 同时支持两种流程：
+
+- **已有 Hardware Package**：安装并激活 `.cepack`，然后由 Unified Robot Runtime
+  使用。该流程不导入 DeepSeek Provider，也不需要厂商 Mapping 源码。
+- **只有厂商原始资产**：安装 `cross-embodiment[onboarding-agent]`，由内置
+  Scanner、Matcher、DeepSeek Provider、Backend Fit、Generator 和 Conformance
+  生成候选 Package。Catalog、Backend Descriptor 和 Schema 随 wheel 分发，
+  `--platform-root` 仅用于显式冻结其他标准版本。
+
+若现有 Backend 不能表达厂商通信方式，Backend Fit 会输出带证据和最低测试要求的
+插件缺口，不会把该能力标记为已支持。当前保留了 `BackendTransport`、动态 Backend
+入口和 `BackendPluginRequirement` 扩展边界；自动生成、编译并注册全新 Python/C++
+Backend 尚未经过实现与真机验证。
+
 - [完整工作流](docs/onboarding/workflow.md)
 - [证据、Capability 与验证等级策略](docs/onboarding/evidence-policy.md)
 - [Weiyi 独立 L1/L2 结果](docs/onboarding/weiyi-independent-acceptance.md)
@@ -95,15 +112,17 @@ Native 路径需要 ROS 2 Humble、主机依赖、正确配置的 CAN 接口及�
 - [新厂商首次接入手册](docs/onboarding/new-vendor-runbook.md)
 - [Weiyi 右臂 Reference Onboarding Case v0.1](docs/onboarding/reference-weiyi-dual-o6-right-arm-v0.1.md)
 
-当前自动生成范围仅为 Weiyi 右臂 `joint_position_state` 和
-`joint_position`，当前 Backend 只支持 ROS2 subscription/action。L1/L2 不发送
+当前自动生成并真机验证的范围仅为 Weiyi 右臂 `joint_position_state` 和
+`joint_position`，当前可执行 Backend 只验证了 ROS2 subscription/action。Python
+SDK、C/C++ Library 和全新 Backend 插件接入仍属于待验证的扩展路径。L1/L2 不发送
 动作；L3 必须显式加载新生成目录，并由现场操作者确认后执行。
 
 2026-10-16 已完成新生成 Package 的 Gate E / L3 真机验收：只读预检读取到
 `arm_mode: 104`、`fault_code: 0` 和真实七关节状态；现场授权后，探测与返回
-两个 `Robot.move_joints()` 均获得 ROS Action 成功终态和实测到位确认。完整证据
-保存在 `onboarding-evidence/weiyi-right-arm-20261015-gate-e/`。该结论只覆盖
-Weiyi 右臂的 ROS2 `joint_position_state` 与 `joint_position`。
+两个 `Robot.move_joints()` 均获得 ROS Action 成功终态和实测到位确认。仓库内的
+Reference Case 保留了去敏摘要和冻结清单；原始现场证据不作为 wheel 资源分发。
+该结论只覆盖 Weiyi 右臂的 ROS2 `joint_position_state` 与
+`joint_position`。
 
 ## Hardware Package 生命周期
 

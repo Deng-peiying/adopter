@@ -48,7 +48,9 @@ call ID 与结果关联。允许的工具是 `list_evidence`、`get_evidence`、
 
 ## 隔离要求
 
-第一次生成必须给出四类根目录：
+第一次生成必须给出四类根目录。wheel 已内置固定平台资产，因此通常只需显式
+提供厂商、输出与禁止读取目录；`--platform-root` 只在需要固定其他平台契约版本时
+使用：
 
 1. 固定的平台根目录；
 2. 一个或多个厂商原始资产根目录；
@@ -65,17 +67,17 @@ call ID 与结果关联。允许的工具是 `list_evidence`、`get_evidence`、
 Builder 从 `interface-evidence.yaml` 装配；冲突或缺失字段不会被猜测。
 
 ```bash
-cd ~/文档/for_robot_dpy/.worktrees/body-aware-robot-agent-mvp/cross-embody-sdk
-export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install 'cross-embodiment[onboarding-agent]'
 
-RUN_ROOT=/tmp/ce-onboarding/weiyi-right-arm-new
-VENDOR_ROOT=~/文档/for_robot_dpy/robot_launch
-OLD_PACKAGE=~/文档/for_robot_dpy/.worktrees/body-aware-robot-agent-mvp/ce-hardware-weiyi-dual-o6
-OLD_DEMO=~/文档/for_robot_dpy/.worktrees/body-aware-robot-agent-mvp/wy-dual-o6-demo
+: "${VENDOR_ROOT:?set VENDOR_ROOT to the vendor asset directory}"
+: "${RUN_ROOT:?set RUN_ROOT to a new onboarding output directory}"
+: "${OLD_PACKAGE:?set OLD_PACKAGE to the denied historical package directory}"
+: "${OLD_DEMO:?set OLD_DEMO to the denied historical demo directory}"
 
-python3.10 -m cross_embodiment.cli onboard inspect \
+ce onboard inspect \
   --vendor-root "$VENDOR_ROOT" \
-  --platform-root "$PWD" \
   --run-root "$RUN_ROOT" \
   --denied-root "$OLD_PACKAGE" \
   --denied-root "$OLD_DEMO" \
@@ -100,21 +102,21 @@ ordered_joints:
 创建 `package-identity.yaml` 后执行：
 
 ```bash
-python3.10 -m cross_embodiment.cli onboard derive-candidates \
+ce onboard derive-candidates \
   --run-root "$RUN_ROOT" \
   --scope "$RUN_ROOT/scope.yaml" \
   --json
 
-python3.10 -m cross_embodiment.cli onboard generate-candidate \
+ce onboard generate-candidate \
   --run-root "$RUN_ROOT" \
   --identity "$RUN_ROOT/package-identity.yaml" \
   --json
 
-python3.10 -m cross_embodiment.cli onboard validate-candidate \
+ce onboard validate-candidate \
   --run-root "$RUN_ROOT" \
   --json
 
-python3.10 -m cross_embodiment.cli onboard report \
+ce onboard report \
   --run-root "$RUN_ROOT" \
   --json
 ```
@@ -145,15 +147,18 @@ arch: x86_64
 
 ## DeepSeek 编排
 
-安装可选依赖。Provider 优先读取环境变量，也可以自动读取仓库根目录下、被
-`.gitignore` 排除的 `.deepseek_credentials.py`：
+安装可选依赖。Provider 优先读取 `DEEPSEEK_API_KEY`；也可通过
+`CROSS_EMBODIMENT_DEEPSEEK_CREDENTIAL_FILE` 指定本地、Git 忽略的凭据文件。凭据不进入
+wheel、sdist 或 Hardware Package：
 
 ```bash
-python3.10 -m pip install -e '.[onboarding-agent]'
-cat > .deepseek_credentials.py <<'PY'
+python -m pip install 'cross-embodiment[onboarding-agent]'
+install -d -m 700 "$HOME/.config/cross-embodiment"
+cat > "$HOME/.config/cross-embodiment/deepseek_credentials.py" <<'PY'
 DEEPSEEK_API_KEY = "replace-with-local-key"
 PY
-chmod 600 .deepseek_credentials.py
+chmod 600 "$HOME/.config/cross-embodiment/deepseek_credentials.py"
+export CROSS_EMBODIMENT_DEEPSEEK_CREDENTIAL_FILE="$HOME/.config/cross-embodiment/deepseek_credentials.py"
 ```
 
 凭据文件只允许一个字面量 `DEEPSEEK_API_KEY` 赋值；Provider 用 AST 读取该
@@ -162,9 +167,8 @@ chmod 600 .deepseek_credentials.py
 确定性 `inspect` 和 `derive-candidates` 完成后，只使用正式 CLI：
 
 ```bash
-python3.10 -m cross_embodiment.cli onboard agent \
+ce onboard agent \
   --run-root "$RUN_ROOT" \
-  --platform-root "$PWD" \
   --identity "$RUN_ROOT/package-identity.yaml" \
   --device right_arm \
   --capability joint_position_state \

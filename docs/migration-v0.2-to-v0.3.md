@@ -19,7 +19,7 @@ Package。项目只通过 `package: weiyi/dual_o6` 与版本依赖它，不再�
 本地开发命令：
 
 ```bash
-cd /home/robot/文档/for_robot/cross-embody-sdk
+cd cross-embody-sdk
 python3 -m pip install -e .
 ce install --project ../wy-dual-o6-demo/project.yaml --registry ..
 ce validate --project ../wy-dual-o6-demo/project.yaml
