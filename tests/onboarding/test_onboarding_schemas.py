@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 
+import jsonschema
 import pytest
 
 from cross_embodiment.onboarding.models import (
@@ -109,3 +111,26 @@ def test_onboarding_json_schemas_exist_and_are_strict() -> None:
         text = (root / "schemas" / "onboarding" / name).read_text(encoding="utf-8")
         assert '"additionalProperties": false' in text
         assert '"$schema": "https://json-schema.org/draft/2020-12/schema"' in text
+
+
+def test_hardware_package_schema_accepts_v01_runtime_manifest() -> None:
+    root = Path(__file__).resolve().parents[2]
+    schema = json.loads(
+        (root / "schemas/hardware-package/package.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    manifest = {
+        "schema_version": "hardware-package/v0.1",
+        "package": {
+            "name": "example/arm",
+            "version": "1.0.0",
+            "vendor": "Example",
+            "model": "arm",
+            "type": "robot",
+        },
+        "embodiment_manifest": "embodiment.yaml",
+        "backends": [{"id": "mock", "type": "python"}],
+    }
+
+    jsonschema.validate(manifest, schema)

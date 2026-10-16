@@ -83,6 +83,12 @@ Native 路径需要 ROS 2 Humble、主机依赖、正确配置的 CAN 接口及�
 
 架构和实施计划位于 `docs/`；`outputs/` 仅用于可重新生成的输出文件。JSON Schema 已按契约分类，但当前 loader 尚未执行 JSON Schema 校验。
 
+内部 v0.1 的抽象冻结结论、真实调用链和扩展边界见
+[`Unified SDK v0.1 抽象完整性与解耦审计`](docs/release/unified-sdk-v0.1-abstraction-freeze-audit-2026-10-16.md)。
+当前冻结的运行契约只覆盖已实现的 `joint_position_state` / `joint_position`：
+Catalog 中的 Capability 是标准词汇表，只有同时具备 Backend、Mapping 与验证证据的
+项目才是实际运行能力。
+
 ## Hardware Onboarding Agent
 
 当前分支提供独立的 Hardware Onboarding 工具链：扫描厂商原始资产，建立可追溯

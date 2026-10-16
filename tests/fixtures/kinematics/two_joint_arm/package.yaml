@@ -1,0 +1,21 @@
+schema_version: hardware-package/v0.1
+package:
+  name: test/two_joint_arm
+  version: 0.1.0
+  vendor: Test
+  model: two_joint_arm
+  type: robot
+embodiment_manifest: embodiment.yaml
+assets:
+  kinematic_model:
+    - format: urdf
+      path: assets/two_joint_arm.urdf
+      source: true
+  kinematic_semantics:
+    - format: yaml
+      path: config/kinematics.yaml
+      source: true
+backends:
+  - id: mock
+    type: mock
+

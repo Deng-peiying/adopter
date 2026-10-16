@@ -13,16 +13,11 @@ from cross_embodiment.package.manifest import load_package_manifest
 from cross_embodiment.protocol.types import Pose
 
 
-HARDWARE_ROOT = Path(__file__).resolve().parents[3] / "ce-hardware-weiyi-dual-o6"
-CANONICAL_JOINTS = tuple(f"arm.right.joint.{index}" for index in range(7))
+HARDWARE_ROOT = Path(__file__).resolve().parents[1] / "fixtures/kinematics/two_joint_arm"
+CANONICAL_JOINTS = ("arm.test.joint.0", "arm.test.joint.1")
 LOWERED = {
-    "arm.right.joint.0": -0.0033670878,
-    "arm.right.joint.1": 1.4220001904,
-    "arm.right.joint.2": -1.4747183164,
-    "arm.right.joint.3": 0.2770752798,
-    "arm.right.joint.4": -0.0200855609,
-    "arm.right.joint.5": 0.050284849,
-    "arm.right.joint.6": 0.070801842,
+    "arm.test.joint.0": 0.2,
+    "arm.test.joint.1": -0.4,
 }
 
 
@@ -34,12 +29,12 @@ class KdlKinematicsTests(unittest.TestCase):
     def test_loads_exact_canonical_order_and_model_frames(self):
         chain = load_kdl_chain(self.package)
 
-        self.assertEqual(chain.device_id, "right_arm")
+        self.assertEqual(chain.device_id, "test_arm")
         self.assertEqual(chain.canonical_joints, CANONICAL_JOINTS)
-        self.assertEqual(chain.model_joints, tuple(f"7axis_joint{i}" for i in range(1, 8)))
-        self.assertEqual(chain.base_link, "7axis_base_link")
-        self.assertEqual(chain.tip_link, "7axis_joint7_Link")
-        self.assertEqual(chain.joint_count, 7)
+        self.assertEqual(chain.model_joints, ("joint_1", "joint_2"))
+        self.assertEqual(chain.base_link, "base_link")
+        self.assertEqual(chain.tip_link, "tip_link")
+        self.assertEqual(chain.joint_count, 2)
         self.assertEqual(len(chain.model_digest), 64)
 
     def test_rejects_a_semantics_map_that_does_not_match_the_chain(self):
@@ -54,7 +49,7 @@ class KdlKinematicsTests(unittest.TestCase):
 
         pose = forward_kinematics(chain, LOWERED)
 
-        self.assertEqual(pose.frame, "7axis_base_link")
+        self.assertEqual(pose.frame, "base_link")
         self.assertTrue(all(math.isfinite(value) for value in pose.position + pose.quaternion_xyzw))
         quaternion_norm = math.sqrt(sum(value * value for value in pose.quaternion_xyzw))
         self.assertAlmostEqual(quaternion_norm, 1.0, places=8)
@@ -72,7 +67,7 @@ class KdlKinematicsTests(unittest.TestCase):
 
     def test_unreachable_target_returns_a_failed_result(self):
         chain = load_kdl_chain(self.package)
-        target = Pose(position=(10.0, 10.0, 10.0), frame="7axis_base_link")
+        target = Pose(position=(10.0, 10.0, 10.0), frame="base_link")
 
         result = solve_inverse_kinematics(chain, target, LOWERED)
 

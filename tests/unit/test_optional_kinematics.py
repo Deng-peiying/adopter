@@ -11,7 +11,7 @@ from cross_embodiment.errors import DependencyError
 from cross_embodiment.package.manifest import load_package_manifest
 
 
-HARDWARE_ROOT = Path(__file__).resolve().parents[3] / "ce-hardware-weiyi-dual-o6"
+HARDWARE_ROOT = Path(__file__).resolve().parents[1] / "fixtures/kinematics/two_joint_arm"
 
 
 class OptionalKinematicsTests(unittest.TestCase):

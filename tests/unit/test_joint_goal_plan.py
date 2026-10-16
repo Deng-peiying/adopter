@@ -13,21 +13,15 @@ from cross_embodiment.package.manifest import load_package_manifest
 from cross_embodiment.protocol.types import JointState, Pose
 
 
-HARDWARE_ROOT = Path(__file__).resolve().parents[3] / "ce-hardware-weiyi-dual-o6"
-JOINTS = tuple(f"arm.right.joint.{index}" for index in range(7))
-LOWERED = dict(
-    zip(
-        JOINTS,
-        (-0.0033670878, 1.4220001904, -1.4747183164, 0.2770752798,
-         -0.0200855609, 0.050284849, 0.070801842),
-    )
-)
+HARDWARE_ROOT = Path(__file__).resolve().parents[1] / "fixtures/kinematics/two_joint_arm"
+JOINTS = ("arm.test.joint.0", "arm.test.joint.1")
+LOWERED = dict(zip(JOINTS, (0.2, -0.4)))
 
 
 def state(positions=LOWERED, *, seconds=0):
     stamp = datetime(2026, 10, 13, 10, 35, tzinfo=timezone.utc) + timedelta(seconds=seconds)
     return JointState(
-        device_id="right_arm",
+        device_id="test_arm",
         positions=dict(positions),
         source_timestamp=stamp,
         received_at=stamp,
@@ -53,10 +47,10 @@ class JointGoalPlanTests(unittest.TestCase):
             orientation_tolerance_rad=0.02,
         )
 
-        self.assertEqual(plan.device_id, "right_arm")
+        self.assertEqual(plan.device_id, "test_arm")
         self.assertEqual(plan.source_state_timestamp, source.source_timestamp)
         self.assertEqual(plan.model_digest, self.chain.model_digest)
-        self.assertEqual(plan.goal_frame, "7axis_base_link")
+        self.assertEqual(plan.goal_frame, "base_link")
         self.assertEqual(tuple(plan.joint_target), JOINTS)
         self.assertEqual(plan.execution_semantics, "joint_space_move_to_ik_solution")
         self.assertTrue(plan.endpoint_ik_validated)
@@ -71,7 +65,7 @@ class JointGoalPlanTests(unittest.TestCase):
 
     def test_plan_requires_fresh_source_frame_and_positive_explicit_tolerances(self):
         missing_stamp = JointState(
-            device_id="right_arm",
+            device_id="test_arm",
             positions=LOWERED,
             source_timestamp=None,
             received_at=datetime.now(timezone.utc),
@@ -101,7 +95,7 @@ class JointGoalPlanTests(unittest.TestCase):
                 )
 
     def test_plan_rejects_failed_endpoint_ik(self):
-        unreachable = Pose(position=(10.0, 10.0, 10.0), frame="7axis_base_link")
+        unreachable = Pose(position=(10.0, 10.0, 10.0), frame="base_link")
 
         with self.assertRaisesRegex(PackageError, "IK endpoint"):
             self.planner.plan(
@@ -113,9 +107,9 @@ class JointGoalPlanTests(unittest.TestCase):
 
     def test_plan_rejects_non_finite_pose_tolerance_and_invalid_quaternion(self):
         invalid_targets = (
-            Pose((math.nan, 0.0, 0.0), frame="7axis_base_link"),
-            Pose((0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 0.0), "7axis_base_link"),
-            Pose((0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 2.0), "7axis_base_link"),
+            Pose((math.nan, 0.0, 0.0), frame="base_link"),
+            Pose((0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 0.0), "base_link"),
+            Pose((0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 2.0), "base_link"),
         )
         for target in invalid_targets:
             with self.assertRaises(PackageError):

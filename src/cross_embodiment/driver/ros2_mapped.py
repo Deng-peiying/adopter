@@ -54,6 +54,9 @@ class MappedRos2Adapter:
     def configure(self) -> None:
         pass
 
+    def load_manifest(self) -> EmbodimentManifest:
+        return self.manifest
+
     def supports_action(self, action_type: str, device_id: str) -> bool:
         return self.mapping_engine.supports(action_type, device_id)
 

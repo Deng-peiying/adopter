@@ -108,5 +108,26 @@ hardware:
             with self.assertRaises(DependencyError):
                 package.select_backend("ros2_humble", PlatformInfo(os="linux", arch="amd64", ros_distro="jazzy"))
 
+    def test_manifest_rejects_unsupported_schema_and_missing_runtime_contract(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / "package.yaml"
+            path.write_text(
+                PACKAGE_YAML.replace("hardware-package/v0.1", "hardware-package/v9"),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(Exception, "schema_version"):
+                load_package_manifest(path)
+
+            path.write_text(
+                """schema_version: hardware-package/v0.1
+package: {name: example/arm, version: 1.0.0, vendor: Example, model: arm, type: robot}
+backends: []
+""",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(Exception, "embodiment_manifest|Backend"):
+                load_package_manifest(path)
+
 if __name__ == "__main__":
     unittest.main()

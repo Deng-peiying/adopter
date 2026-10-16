@@ -11,6 +11,7 @@ from cross_embodiment.package.resolver import PackageResolver
 PACKAGE = """
 schema_version: hardware-package/v0.1
 package: {name: example/arm, version: 1.2.3, vendor: Example, model: arm, type: robot}
+embodiment_manifest: embodiment.yaml
 backends: [{id: mock, type: mock}]
 """
 
@@ -35,6 +36,10 @@ class RegistryResolverTests(unittest.TestCase):
             package_dir = root / "packages" / "example" / "arm"
             package_dir.mkdir(parents=True)
             (package_dir / "package.yaml").write_text(PACKAGE, encoding="utf-8")
+            (package_dir / "embodiment.yaml").write_text(
+                "schema_version: embodiment/v0.2\nembodiment: {type: arm}\ndevices: []\n",
+                encoding="utf-8",
+            )
             (package_dir / "instance.yaml").write_text(
                 """
 schema_version: robot-instance/v0.1

@@ -1,11 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://cross-embodiment.dev/schemas/hardware-package/v0.3",
+  "$id": "https://cross-embodiment.dev/schemas/hardware-package/v0.1",
   "title": "Hardware Package manifest",
   "type": "object",
   "required": ["schema_version", "package", "embodiment_manifest", "backends"],
   "properties": {
-    "schema_version": {"const": "hardware-package/v0.3"},
+    "schema_version": {"const": "hardware-package/v0.1"},
     "package": {
       "type": "object",
       "required": ["name", "version", "vendor", "model", "type"],

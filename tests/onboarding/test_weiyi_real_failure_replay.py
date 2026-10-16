@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 import json
+import os
 from pathlib import Path
 import shutil
 
@@ -18,7 +19,8 @@ from cross_embodiment.onboarding.models import CapabilityCandidate
 
 
 ROOT = Path(__file__).resolve().parents[2]
-RAW_VENDOR = Path("/home/robot/文档/for_robot_dpy/robot_launch")
+_RAW_VENDOR_ENV = os.environ.get("CROSS_EMBODIMENT_WEIYI_RAW_ROOT")
+RAW_VENDOR = Path(_RAW_VENDOR_ENV).resolve() if _RAW_VENDOR_ENV else None
 REPLAY = Path(__file__).parent / "fixtures/deepseek_protocol/weiyi_failed_candidates.json"
 JOINTS = tuple(f"arm.right.joint.{index}" for index in range(7))
 
@@ -35,8 +37,10 @@ RAW_FILES = (
 
 
 def _real_evidence(tmp_path: Path):
-    if not RAW_VENDOR.is_dir():
-        pytest.skip("original robot_launch asset root is unavailable")
+    if RAW_VENDOR is None or not RAW_VENDOR.is_dir():
+        pytest.skip(
+            "set CROSS_EMBODIMENT_WEIYI_RAW_ROOT to replay original robot_launch assets"
+        )
     vendor = tmp_path / "robot_launch"
     for relative in RAW_FILES:
         source = RAW_VENDOR / relative
