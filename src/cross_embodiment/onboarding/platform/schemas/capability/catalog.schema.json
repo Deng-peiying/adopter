@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cross-embodiment.dev/schemas/capability/catalog-v0.1.json",
+  "title": "Cross-Embodiment Capability Catalog",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "catalog_version", "assessment_statuses", "capabilities"],
+  "properties": {
+    "schema_version": {"const": "capability-catalog/v0.1"},
+    "catalog_version": {"type": "string", "minLength": 1},
+    "assessment_statuses": {
+      "const": ["native", "derived", "unsupported", "unknown"]
+    },
+    "capabilities": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "category", "binding_operations", "semantics", "required_for_profiles"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "category": {"type": "string", "minLength": 1},
+          "binding_operations": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+          "required_for_profiles": {"type": "array", "items": {"type": "string", "minLength": 1}},
+          "semantics": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "input", "output", "units", "frame", "lifecycle"],
+            "properties": {
+              "kind": {"type": "string", "minLength": 1},
+              "input": {}, "output": {}, "units": {}, "frame": {},
+              "lifecycle": {"type": "string", "minLength": 1}
+            }
+          }
+        }
+      }
+    }
+  }
+}

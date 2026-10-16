@@ -21,10 +21,12 @@ def test_extracts_package_interfaces_and_empty_action_feedback() -> None:
     assert any(c.get("package") == "demo_arm" and c.get("version") == "1.2.3" for c in claims)
     state = next(c for c in claims if c.get("interface") == "ArmState" and c.get("interface_kind") == "msg")
     assert state["fields"][1] == {"type": "float64[7]", "name": "joint_angles"}
+    assert state["qualified_interface"] == "demo_arm/msg/ArmState"
     service = next(c for c in claims if c.get("interface") == "SetPower")
     assert service["request_fields"][0]["name"] == "power_enable"
     action = next(c for c in claims if c.get("interface") == "ArmMove")
     assert action["goal_fields"][0]["name"] == "mode"
+    assert action["qualified_interface"] == "demo_arm/action/ArmMove"
     assert action["feedback_fields"] == []
     assert any(c.get("interface_kind") == "idl" and c.get("interface") == "Installed" for c in claims)
 

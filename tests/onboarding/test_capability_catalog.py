@@ -26,11 +26,7 @@ def test_shipped_catalog_freezes_v01_contract() -> None:
     assert catalog.get("joint_position_state").binding_operations == ("joint_state",)
     assert catalog.get("joint_position").binding_operations == ("joint_position",)
     assert catalog.get("ee_pose").binding_operations == ("cartesian_pose",)
-    assert {
-        item.id
-        for item in catalog.capabilities
-        if "weiyi_right_arm_v0" in item.required_for_profiles
-    } == {"joint_position_state", "joint_position"}
+    assert all(not item.required_for_profiles for item in catalog.capabilities)
     for item in catalog.capabilities:
         assert set(item.semantics) == {
             "kind",

@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cross-embodiment.dev/schemas/onboarding/asset-inventory.schema.json",
+  "title": "Asset inventory",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "assets"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "asset-inventory/v0.1"
+    },
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "asset_id",
+          "relative_path",
+          "sha256",
+          "kind",
+          "size_bytes",
+          "source_root"
+        ],
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "relative_path": {
+            "type": "string",
+            "minLength": 1,
+            "not": {
+              "pattern": "^(?:/|.*(?:^|/)\\.\\.(?:/|$))"
+            }
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "source_root": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "relative_path", "detail"],
+        "properties": {
+          "code": {"type": "string"},
+          "relative_path": {"type": "string"},
+          "detail": {"type": "string"}
+        }
+      }
+    },
+    "duplicate_digests": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sha256", "relative_paths"],
+        "properties": {
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "relative_paths": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    }
+  }
+}

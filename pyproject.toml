@@ -24,4 +24,9 @@ ce = "cross_embodiment.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"cross_embodiment.onboarding" = ["schemas/*.json"]
+"cross_embodiment.onboarding" = [
+  "schemas/*.json",
+  "platform/catalogs/backends/*.yaml",
+  "platform/catalogs/capabilities/*.yaml",
+  "platform/schemas/**/*.json",
+]

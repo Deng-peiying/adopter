@@ -378,7 +378,11 @@ def _build_parser() -> argparse.ArgumentParser:
     phases = onboard.add_subparsers(dest="onboard_phase", required=True)
     inspect = phases.add_parser("inspect")
     inspect.add_argument("--vendor-root", type=Path, action="append", required=True)
-    inspect.add_argument("--platform-root", type=Path, required=True)
+    inspect.add_argument(
+        "--platform-root",
+        type=Path,
+        help="platform Catalog/Schema root (defaults to assets shipped in the wheel)",
+    )
     inspect.add_argument("--run-root", type=Path, required=True)
     inspect.add_argument("--denied-root", type=Path, action="append", default=[])
     inspect.add_argument("--json", action="store_true")
@@ -408,7 +412,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="run evidence reasoning through the stateful typed-tool onboarding protocol",
     )
     agent.add_argument("--run-root", type=Path, required=True)
-    agent.add_argument("--platform-root", type=Path, required=True)
+    agent.add_argument(
+        "--platform-root",
+        type=Path,
+        help="platform Catalog/Schema root (defaults to assets shipped in the wheel)",
+    )
     agent.add_argument("--identity", type=Path, required=True)
     agent.add_argument("--device", required=True)
     agent.add_argument("--capability", action="append", required=True)

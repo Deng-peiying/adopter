@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cross-embodiment.dev/schemas/mapping/interface-mapping-v1.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "bindings"],
+  "properties": {
+    "schema_version": {"const": "interface-mapping/v1"},
+    "bindings": {
+      "type": "object", "minProperties": 1,
+      "additionalProperties": {
+        "type": "object", "additionalProperties": false,
+        "required": ["semantic", "transport", "evidence"],
+        "properties": {
+          "semantic": {"type": "object", "additionalProperties": false, "required": ["operation", "device", "joints", "unit"], "properties": {
+            "operation": {"enum": ["joint_state", "joint_position"]}, "device": {"type": "string"},
+            "joints": {"type": "array", "minItems": 1, "items": {"type": "string"}}, "unit": {"const": "radian"}
+          }},
+          "transport": {"type": "object", "additionalProperties": false, "required": ["backend", "kind", "endpoint", "interface"], "properties": {
+            "backend": {"const": "ros2"}, "kind": {"enum": ["subscription", "action"]}, "endpoint": {"type": "string", "pattern": "^/"},
+            "interface": {"type": "string"}, "timeout_s": {"type": "number", "exclusiveMinimum": 0}
+          }},
+          "decode": {"type": "object"}, "encode": {"type": "object"}, "result": {"type": "object"}, "completion": {"type": "object"},
+          "evidence": {"type": "array", "minItems": 1, "items": {"type": "string"}}
+        }
+      }
+    }
+  }
+}

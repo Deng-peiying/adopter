@@ -165,7 +165,7 @@ class OnboardingWorkflow:
                 if isinstance(saved_platform_root, str) and saved_platform_root:
                     platform_root = Path(saved_platform_root)
         self.platform_root = (
-            platform_root or Path(__file__).resolve().parents[3]
+            platform_root or Path(__file__).resolve().parent / "platform"
         ).resolve()
 
     def inspect(self, vendor_roots: tuple[Path, ...], denied_roots: tuple[Path, ...] = ()) -> dict[str, Any]:

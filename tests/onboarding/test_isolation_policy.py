@@ -85,3 +85,20 @@ def test_platform_lock_captures_reproducible_environment(tmp_path: Path) -> None
     assert lock.architecture
     assert lock.asset_digests[str(schema.relative_to(repo))]
     assert "sdk_commit:" in path.read_text(encoding="utf-8")
+
+
+def test_platform_lock_supports_installed_wheel_without_git(tmp_path: Path) -> None:
+    platform = tmp_path / "installed-wheel-platform"
+    schema = platform / "schemas" / "example.json"
+    schema.parent.mkdir(parents=True)
+    schema.write_text("{}", encoding="utf-8")
+
+    lock = PlatformLock.capture(platform, (schema,))
+
+    assert lock.sdk_commit.startswith("distribution:cross-embodiment@")
+    assert "assets-sha256:" in lock.sdk_commit
+    assert lock.asset_digests == {
+        "schemas/example.json": (
+            "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        )
+    }

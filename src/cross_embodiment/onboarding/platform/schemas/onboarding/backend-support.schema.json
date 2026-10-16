@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cross-embodiment.dev/schemas/onboarding/backend-support.schema.json",
+  "title": "Backend support",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "backends"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "backend-support/v0.1"
+    },
+    "backends": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "backend_id",
+          "supported_transport_kinds",
+          "supported_operations",
+          "requirements",
+          "version"
+        ],
+        "properties": {
+          "backend_id": {
+            "type": "string"
+          },
+          "supported_transport_kinds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "supported_operations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "requirements": {
+            "type": "array"
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from hashlib import sha256
+from importlib.metadata import PackageNotFoundError, version
 import platform
 from pathlib import Path
 import subprocess
@@ -62,21 +63,38 @@ class PlatformLock:
     @classmethod
     def capture(cls, repo_root: Path, schema_paths: Sequence[Path]) -> "PlatformLock":
         root = repo_root.resolve()
-        commit = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=root,
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
         digests: dict[str, str] = {}
         for path in sorted((item.resolve() for item in schema_paths), key=str):
             if not _inside(path, root):
                 raise ValueError(f"platform asset is outside repository: {path}")
             digests[str(path.relative_to(root))] = sha256(path.read_bytes()).hexdigest()
+        git_result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if git_result.returncode == 0:
+            platform_revision = git_result.stdout.strip()
+        else:
+            try:
+                sdk_version = version("cross-embodiment")
+            except PackageNotFoundError:
+                sdk_version = "0+unknown"
+            asset_lock = sha256(
+                "\n".join(
+                    f"{relative}:{digest}"
+                    for relative, digest in sorted(digests.items())
+                ).encode("utf-8")
+            ).hexdigest()
+            platform_revision = (
+                f"distribution:cross-embodiment@{sdk_version}:"
+                f"assets-sha256:{asset_lock}"
+            )
         return cls(
             schema_version="platform-lock/v0.1",
-            sdk_commit=commit,
+            sdk_commit=platform_revision,
             asset_digests=digests,
             python_version=platform.python_version(),
             os_name=platform.platform(),

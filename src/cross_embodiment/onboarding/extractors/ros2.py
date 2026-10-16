@@ -260,10 +260,12 @@ def _action_result_observation(
 
 def _interface_package(path: Path, root: Path) -> str | None:
     current = path.parent
-    while current != root and root in current.parents:
+    while current == root or root in current.parents:
         manifest = current / "package.xml"
         if manifest.is_file():
             return (ET.parse(manifest).getroot().findtext("name") or "").strip() or None
+        if current == root:
+            break
         current = current.parent
     relative = path.relative_to(root)
     if "share" in relative.parts:

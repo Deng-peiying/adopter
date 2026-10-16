@@ -90,8 +90,7 @@ capabilities:
     units: radian
     frame: joint
     lifecycle: sample
-  required_for_profiles:
-  - weiyi_right_arm_v0
+  required_for_profiles: []
 - id: joint_velocity_state
   category: state
   binding_operations:
@@ -188,8 +187,7 @@ capabilities:
     units: radian
     frame: joint
     lifecycle: command
-  required_for_profiles:
-  - weiyi_right_arm_v0
+  required_for_profiles: []
 - id: joint_delta
   category: joint_control
   binding_operations:

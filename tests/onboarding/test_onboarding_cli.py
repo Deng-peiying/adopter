@@ -36,6 +36,66 @@ def test_agent_cli_is_the_formal_deepseek_entrypoint(tmp_path: Path) -> None:
     assert args.provider == "deepseek"
 
 
+def test_installed_onboarding_defaults_to_packaged_platform_assets(
+    tmp_path: Path,
+) -> None:
+    workflow = OnboardingWorkflow(tmp_path / "run")
+
+    assert workflow.platform_root == (
+        Path(__file__).resolve().parents[2]
+        / "src/cross_embodiment/onboarding/platform"
+    ).resolve()
+    assert (
+        workflow.platform_root / "catalogs/capabilities/v0.1.yaml"
+    ).is_file()
+    assert (
+        workflow.platform_root / "catalogs/backends/ros2_mapped_v0.1.yaml"
+    ).is_file()
+    assert (
+        workflow.platform_root
+        / "schemas/onboarding/interface-mapping-candidate.schema.json"
+    ).is_file()
+
+
+def test_cli_platform_root_is_optional_for_packaged_onboarding() -> None:
+    inspect_args = _build_parser().parse_args([
+        "onboard", "inspect",
+        "--vendor-root", str(VENDOR),
+        "--run-root", "/tmp/onboarding-run",
+    ])
+    agent_args = _build_parser().parse_args([
+        "onboard", "agent",
+        "--run-root", "/tmp/onboarding-run",
+        "--identity", "/tmp/identity.yaml",
+        "--device", "right_arm",
+        "--capability", "joint_position_state",
+        "--capability", "joint_position",
+        "--joint", "arm.right.joint.0",
+    ])
+
+    assert inspect_args.platform_root is None
+    assert agent_args.platform_root is None
+
+
+def test_packaged_platform_assets_match_repository_contracts() -> None:
+    packaged = (
+        Path(__file__).resolve().parents[2]
+        / "src/cross_embodiment/onboarding/platform"
+    )
+    repository = Path(__file__).resolve().parents[2]
+    paths = [
+        Path("catalogs/capabilities/v0.1.yaml"),
+        Path("catalogs/backends/ros2_mapped_v0.1.yaml"),
+        *(
+            path.relative_to(repository)
+            for path in sorted((repository / "schemas").rglob("*.json"))
+        ),
+    ]
+
+    for relative in paths:
+        assert (packaged / relative).read_bytes() == (repository / relative).read_bytes()
+
+
 def test_agent_cli_requires_exact_first_version_capability_scope(tmp_path: Path, capsys) -> None:
     identity = tmp_path / "identity.yaml"
     identity.write_text("package_name: example/test\n")
