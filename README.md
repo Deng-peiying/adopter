@@ -28,14 +28,26 @@ cd package-distribution
 
 sha256sum -c SHA256SUMS
 
+# 厂商 Runtime 可以放在任意目录，但必须显式提供。
+read -er -p "Weiyi robot_launch 目录: " VENDOR_ROOT_INPUT
+VENDOR_ROOT="$(realpath "$VENDOR_ROOT_INPUT")"
+test -f "$VENDOR_ROOT/setup.sh"
+test -f "$VENDOR_ROOT/install/setup.bash"
+test -d "$VENDOR_ROOT/third_party/wy_arm_sdk/install"
+
 ./quickstart.sh all \
   --runtime-root "$HOME/ce-runtime/weiyi-right-arm" \
-  --vendor-root "$HOME/vendor/robot_launch" \
+  --vendor-root "$VENDOR_ROOT" \
   --instance-id lab/weiyi-right-arm-01 \
   --operator "$USER"
 ```
 
 该命令使用 Distribution Kit 内经过验收的 wheel 和 `.cepack`。安装阶段不连接机器人；在线阶段分别等待 `ENABLE RIGHT ARM` 和 `EXECUTE L3`。
+
+这里不限定厂商 Runtime 的绝对位置。`--vendor-root` 是必填参数，必须指向包含
+`setup.sh`、构建后的 `install/setup.bash` 和
+`third_party/wy_arm_sdk/install/` 的 `robot_launch` 根目录。Hardware Package 不包含
+这些厂商文件。
 
 ## 1. 平台边界
 
@@ -213,7 +225,8 @@ PyYAML 版本和所选 Backend 的针对性导入检查为准；若 `pip check` 
 
 #### 选择 A：使用已有 Weiyi `.cepack`
 
-首先取得内部 Distribution Kit。下面假设它与 SDK 源码目录同级：
+首先取得内部 Distribution Kit，并显式指定外部厂商 Runtime。下面只采用目录约定方便
+说明；实际目录可以不同，后续命令只使用已经解析的绝对路径变量：
 
 ```text
 workspace/
@@ -225,22 +238,33 @@ workspace/
 在 SDK 源码目录执行以下纯文件操作：
 
 ```bash
-CE="$PWD/.venv/bin/ce"
-KIT="$(realpath ../package-distribution)"
+SDK_ROOT="$PWD"
+KIT_ROOT="$(realpath ../package-distribution)"
+
+read -er -p "Weiyi robot_launch 目录: " VENDOR_ROOT_INPUT
+VENDOR_ROOT="$(realpath "$VENDOR_ROOT_INPUT")"
+
 RUNTIME_ROOT="$(realpath -m ../weiyi-source-runtime)"
 STORE="$RUNTIME_ROOT/store"
 INSTANCE_ID=lab/weiyi-right-arm-source
+CE="$SDK_ROOT/.venv/bin/ce"
 
-(cd "$KIT" && sha256sum -c SHA256SUMS)
+test -x "$CE"
+test -f "$KIT_ROOT/SHA256SUMS"
+test -f "$VENDOR_ROOT/setup.sh"
+test -f "$VENDOR_ROOT/install/setup.bash"
+test -d "$VENDOR_ROOT/third_party/wy_arm_sdk/install"
+
+(cd "$KIT_ROOT" && sha256sum -c SHA256SUMS)
 mkdir -p "$RUNTIME_ROOT"
 
 "$CE" package install \
-  --artifact "$KIT/packages/weiyi-right-arm-runtime.cepack" \
+  --artifact "$KIT_ROOT/packages/weiyi-right-arm-runtime.cepack" \
   --store "$STORE" \
   --json
 
 sed "s|__INSTANCE_ID__|$INSTANCE_ID|g" \
-  "$KIT/instances/right-arm.instance.template.yaml" \
+  "$KIT_ROOT/instances/right-arm.instance.template.yaml" \
   > "$RUNTIME_ROOT/right-arm.instance.yaml"
 
 "$CE" package activate \
@@ -259,6 +283,10 @@ sed "s|__INSTANCE_ID__|$INSTANCE_ID|g" \
 Weiyi `robot_launch`、ROS2 Humble、CAN 和真实机器人；启动 Driver、使能右臂后，
 再按照“已安装 Package 的运行命令”执行 `preflight` 和经授权的 `accept-l3`。
 
+`VENDOR_ROOT` 是外部 Runtime 路径，不会写入 `.cepack` 或 SDK Store。若重新打开终端，
+需要重新设置 `SDK_ROOT`、`KIT_ROOT`、`VENDOR_ROOT`、`RUNTIME_ROOT`、`STORE`、
+`INSTANCE_ID` 和 `CE`，或将它们写入仅供本机使用且不提交 Git 的环境文件。
+
 若目标是最少步骤完成真机验收，返回本 README 的“Distribution Kit”流程，使用
 `quickstart.sh all`。它会自动编排 Driver、使能等待、只读预检和 L3 确认。
 
@@ -268,16 +296,22 @@ Weiyi `robot_launch`、ROS2 Humble、CAN 和真实机器人；启动 Driver、�
 
 ```bash
 RUN_ROOT="$PWD/onboarding-run"
-VENDOR_ROOT="/path/to/vendor-assets"
+read -er -p "厂商原始资产目录: " VENDOR_ASSET_ROOT_INPUT
+VENDOR_ASSET_ROOT="$(realpath "$VENDOR_ASSET_ROOT_INPUT")"
+test -d "$VENDOR_ASSET_ROOT"
 
 .venv/bin/ce onboard inspect \
-  --vendor-root "$VENDOR_ROOT" \
+  --vendor-root "$VENDOR_ASSET_ROOT" \
   --run-root "$RUN_ROOT" \
   --json
 ```
 
 扫描不会连接或控制机器人。后续 Scope、Candidate、DeepSeek 和 Conformance 步骤见
 [Hardware Onboarding 工作流](docs/onboarding/workflow.md)。
+
+`VENDOR_ASSET_ROOT` 是供 Scanner 读取的原始资产；`VENDOR_ROOT` 是部署时可运行的
+Driver/Runtime。对于 Weiyi，两者可以指向同一个 `robot_launch`，但平台不要求它们
+必须相同。
 
 ## 4. Hardware Package 命令
 
