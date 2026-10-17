@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cross-embodiment.dev/schemas/embodiment/v0.2",
+  "title": "Embodiment Manifest",
+  "type": "object",
+  "required": ["schema_version", "embodiment", "devices"],
+  "properties": {
+    "schema_version": {"const": "embodiment/v0.2"},
+    "embodiment": {"type": "object", "required": ["id", "name", "vendor", "model"]},
+    "frames": {"type": "object"},
+    "devices": {"type": "array", "items": {"type": "object", "required": ["id", "type"]}},
+    "control": {"type": "object"},
+    "safety": {"type": "object"},
+    "adapter": {"type": "object"}
+  },
+  "additionalProperties": true
+}

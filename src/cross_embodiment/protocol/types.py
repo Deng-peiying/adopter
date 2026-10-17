@@ -37,6 +37,18 @@ class RobotState:
 
 
 @dataclass(frozen=True)
+class JointState:
+    """Measured named joints for one device, with source and receipt times."""
+
+    device_id: str
+    positions: dict[str, float]
+    source_timestamp: datetime | None
+    received_at: datetime
+    status: str
+    details: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class ActionSpec:
     type: str
     target: str
@@ -53,6 +65,22 @@ class Action:
     values: Any
     timestamp: datetime = field(default_factory=now_utc)
     metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class JointTarget:
+    """Canonical named joint targets; revolute positions are radians."""
+
+    device: str
+    positions: dict[str, float]
+
+
+@dataclass(frozen=True)
+class CartesianTarget:
+    """Absolute end-effector pose in metres and an xyzw quaternion."""
+
+    device: str
+    pose: Pose
 
 
 @dataclass
@@ -76,6 +104,27 @@ class Command:
 
 @dataclass(frozen=True)
 class CommandResult:
+    """Command submission status; never implies motion completion by itself.
+
+    ``accepted`` preserves the v0.1 compatibility flag. ``status`` distinguishes
+    simulation, local publication, and rejection; ``dispatched`` says whether
+    the adapter attempted delivery to its configured backend.
+    """
+
     accepted: bool
     message: str = ""
     sequence_id: int | None = None
+    command_id: str | None = None
+    status: str | None = None
+    backend_code: str | int | None = None
+    details: dict[str, Any] = field(default_factory=dict)
+    dispatched: bool = False
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    final_joint_state: JointState | None = None
+    arrival_confirmed: bool | None = None
+    max_joint_error_rad: float | None = None
+
+    def __post_init__(self) -> None:
+        if self.status is None:
+            object.__setattr__(self, "status", "accepted" if self.accepted else "rejected")

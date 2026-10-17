@@ -5,7 +5,7 @@ from copy import deepcopy
 from ..errors import CommandRejected, LifecycleError
 from ..driver.health import HealthReport
 from ..hardware.manifest import EmbodimentManifest
-from ..protocol.types import Command, CommandResult, Pose, RobotState, SafetyState
+from ..protocol.types import Command, CommandResult, JointState, Pose, RobotState, SafetyState
 
 
 class MockAdapter:
@@ -18,10 +18,26 @@ class MockAdapter:
         self._enabled = False
         self._sequence = 0
         self.commands: list[Command] = []
+        joint_positions = {
+            joint.get("canonical_name", joint.get("name")): 0.0
+            for device in manifest.devices
+            for joint in device.get("joints", [])
+            if joint.get("canonical_name", joint.get("name"))
+        }
+        ee_poses = {
+            str(device["id"]): Pose((0.4, 0.0, 0.4), frame="base")
+            for device in manifest.devices
+            if device.get("type") == "arm" and device.get("id")
+        }
+        grippers = {
+            str(device["id"]): 0.5
+            for device in manifest.devices
+            if device.get("type") == "gripper" and device.get("id")
+        }
         self._state = RobotState(
-            joint_positions={"joint_0": 0.0, "joint_1": 0.0},
-            ee_poses={"right_arm": Pose((0.4, 0.0, 0.4), frame="base")},
-            grippers={"right_gripper": 0.5},
+            joint_positions=joint_positions,
+            ee_poses=ee_poses,
+            grippers=grippers,
         )
 
     def load_manifest(self) -> EmbodimentManifest:
@@ -47,6 +63,31 @@ class MockAdapter:
         self._enabled = False
         self._state.safety = SafetyState(enabled=False)
 
+    def capabilities(self):
+        return self._manifest.capabilities()
+
+    def supports_action(self, action_type: str, device_id: str) -> bool:
+        return self._manifest.supports(action_type, device_id)
+
+    def get_joint_state(self, device_id: str) -> JointState:
+        device = self._manifest.device(device_id)
+        if device is None:
+            raise ValueError(f"Unknown device: {device_id}")
+        state = self.get_state()
+        names = [
+            joint.get("canonical_name", joint.get("name"))
+            for joint in device.get("joints", [])
+        ]
+        source = state.joint_positions or {}
+        complete = all(name in source for name in names)
+        return JointState(
+            device_id=device_id,
+            positions={name: float(source[name]) for name in names} if complete else {},
+            source_timestamp=state.timestamp,
+            received_at=state.timestamp,
+            status="ready" if complete and state.safety.enabled else "not_ready",
+        )
+
     def get_state(self) -> RobotState:
         if not self._connected:
             raise LifecycleError("Adapter is disconnected")
@@ -68,7 +109,10 @@ class MockAdapter:
         else:
             raise CommandRejected(f"Mock adapter does not implement {command.mode}")
         self.commands.append(command)
-        return CommandResult(True, "accepted", self._sequence)
+        return CommandResult(
+            True, "applied by mock adapter; no physical robot involved", self._sequence,
+            status="simulated", dispatched=False,
+        )
 
     def health(self) -> HealthReport:
         return HealthReport(self._connected, "ready" if self._connected else "disconnected")

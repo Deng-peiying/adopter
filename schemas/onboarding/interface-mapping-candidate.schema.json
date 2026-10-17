@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cross-embodiment.dev/schemas/onboarding/interface-mapping-candidate.schema.json",
+  "title": "Non-executable interface mapping candidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "live_execution_ready", "bindings"],
+  "properties": {
+    "schema_version": {"const": "interface-mapping-candidate/v0.1"},
+    "live_execution_ready": {"const": false},
+    "bindings": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["interface_mapped", "semantic", "transport", "evidence"],
+        "properties": {
+          "interface_mapped": {"const": true},
+          "semantic": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["operation", "device", "joints", "unit"],
+            "properties": {
+              "operation": {"enum": ["joint_state", "joint_position"]},
+              "device": {"type": "string", "minLength": 1},
+              "joints": {
+                "type": "array",
+                "minItems": 1,
+                "items": {"type": "string"}
+              },
+              "unit": {"const": "radian"}
+            }
+          },
+          "transport": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["backend", "kind", "endpoint", "interface"],
+            "properties": {
+              "backend": {"const": "ros2"},
+              "kind": {"enum": ["subscription", "action"]},
+              "endpoint": {"type": "string", "pattern": "^/"},
+              "interface": {"type": "string", "minLength": 1}
+            }
+          },
+          "decode": {"type": "object"},
+          "encode": {"type": "object"},
+          "result": {"type": "object"},
+          "completion_policy": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["status", "state_binding", "completion", "missing_fields"],
+            "properties": {
+              "status": {"const": "unresolved"},
+              "state_binding": {"type": "string", "minLength": 1},
+              "completion": {
+                "type": "array",
+                "minItems": 1,
+                "items": {"type": "string"}
+              },
+              "missing_fields": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "enum": [
+                    "timeout_s",
+                    "arrival_tolerance_rad",
+                    "settle_window_s"
+                  ]
+                }
+              }
+            }
+          },
+          "evidence": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string"}
+          }
+        }
+      }
+    }
+  }
+}

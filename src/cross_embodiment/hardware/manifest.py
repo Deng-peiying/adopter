@@ -21,10 +21,31 @@ class EmbodimentManifest:
 
     def supports(self, action_type: str, target: str | None = None) -> bool:
         for mode in self.control.get("supported_modes", []):
-            if mode.get("type") == action_type and (target is None or mode.get("target") == target):
+            aliases = mode.get("legacy_target_aliases", [])
+            if mode.get("type") == action_type and (target is None or mode.get("target") == target or target in aliases):
                 return True
         device = self.device(target) if target else None
         return bool(device and action_type in device.get("capabilities", []))
+
+    def capabilities(self) -> dict[str, Any]:
+        """Return a vendor-neutral, serializable view of declared capabilities."""
+        devices = []
+        for device in self.devices:
+            devices.append({
+                "id": device.get("id"),
+                "type": device.get("type"),
+                "joints": [{key: joint[key] for key in ("canonical_name", "type", "unit", "limits") if key in joint}
+                           for joint in device.get("joints", [])],
+                "capabilities": list(device.get("capabilities", [])),
+            })
+        return {
+            "embodiment": {key: self.embodiment[key] for key in ("type", "dof") if key in self.embodiment},
+            "frames": dict(self.frames),
+            "devices": devices,
+            "actions": [{key: value for key, value in mode.items() if key != "legacy_target_aliases"}
+                        for mode in self.control.get("supported_modes", [])],
+            "safety": dict(self.safety),
+        }
 
 
 def _parse_yaml(text: str) -> dict[str, Any]:
@@ -46,7 +67,15 @@ def load_manifest(path: str | Path) -> EmbodimentManifest:
     missing = [key for key in required if key not in data]
     if missing:
         raise ValueError(f"Manifest missing required fields: {', '.join(missing)}")
-    return EmbodimentManifest(**{key: data.get(key, default) for key, default in {
+    manifest = EmbodimentManifest(**{key: data.get(key, default) for key, default in {
         "schema_version": None, "embodiment": None, "frames": {}, "devices": [],
         "control": {}, "safety": {}, "adapter": {},
     }.items()})
+    # Package safety settings provide instance-wide policy defaults.
+    safety_path = path.parent / "config" / "safety.yaml"
+    if safety_path.is_file():
+        package_safety = _parse_yaml(safety_path.read_text(encoding="utf-8"))
+        for key in ("max_state_age_ms", "requires_enable", "supports_estop"):
+            if key in package_safety:
+                manifest.safety[key] = package_safety[key]
+    return manifest

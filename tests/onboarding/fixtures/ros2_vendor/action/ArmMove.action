@@ -1,0 +1,6 @@
+string mode
+float64[7] target
+---
+ArmMotionError error_code
+string error_description
+---

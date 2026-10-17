@@ -1,0 +1,484 @@
+{
+  "source_run": "weiyi-right-arm-20261015-deepseek-formal-final",
+  "source_sha256": "0ac44d3e47d6f002ca669c60a8da632f7306b3d834a6c53df2cb567fd72c61c4",
+  "submit_candidate_calls": [
+    {
+      "arguments": {
+        "capability_id": "joint_position_state",
+        "evidence_ids": [
+          "evidence:ros2:robot_launch:examples/right_arm_return.py:7abf3824f777",
+          "evidence:ros2:robot_launch:examples/caiquan_demo.py:f3bfb5ff06db",
+          "evidence:ros2:robot_launch:examples/caiquan_demo_safe.py:f3bfb5ff06db",
+          "evidence:ros2:robot_launch:examples/whole_body_demo.py:43e0ad722b1f",
+          "evidence:ros2:robot_launch:third_party/wy_arm_sdk/install/arm_control_interface/share/arm_control_interface/msg/ArmState.msg:cf908b315d7a",
+          "evidence:ros2:robot_launch:third_party/wy_arm_sdk/install/arm_control_interface/share/arm_control_interface/msg/ArmFault.msg:911054d5c3ef",
+          "evidence:ros2:robot_launch:third_party/wy_arm_sdk/install/arm_control_interface/share/arm_control_interface/msg/ArmFaultType.msg:0fb2c8f771b9",
+          "evidence:ros2:robot_launch:third_party/wy_arm_sdk/install/arm_control_system/share/arm_control_system/config/dual_arm_system.yaml:32494002ac04"
+        ],
+        "proposed_semantics": {
+          "binding_operation": "subscribe",
+          "endpoint": "/wy_robot1/right_arm_state",
+          "fault_field": "arm_fault.fault_type.value",
+          "interface_type": "arm_control_interface/msg/ArmState",
+          "joint_limits": [
+            [
+              -2.9,
+              2.9
+            ],
+            [
+              -1.57,
+              1.57
+            ],
+            [
+              -2.45,
+              2.45
+            ],
+            [
+              -0.6,
+              2.3
+            ],
+            [
+              -2.8,
+              2.8
+            ],
+            [
+              -1.3,
+              1.3
+            ],
+            [
+              -1.3,
+              1.3
+            ]
+          ],
+          "mode_field": "arm_mode",
+          "ordered_joints": [
+            "arm.right.joint.0",
+            "arm.right.joint.1",
+            "arm.right.joint.2",
+            "arm.right.joint.3",
+            "arm.right.joint.4",
+            "arm.right.joint.5",
+            "arm.right.joint.6"
+          ],
+          "positions_field": "joint_angles",
+          "ready_values": [
+            104
+          ],
+          "stamp_field": "header.stamp",
+          "transport_kind": "ros2_subscription",
+          "unit": "radian"
+        }
+      },
+      "call_id": "call_00_MxuJ9mxD9TxE4BOcuGiE0053",
+      "ok": false,
+      "result": {
+        "conflicts": [],
+        "message": "candidate is not fully supported by linked evidence",
+        "missing_fields": [
+          "binding_operation"
+        ],
+        "reason": "candidate_not_supported_by_evidence"
+      },
+      "tool": "submit_candidate"
+    },
+    {
+      "arguments": {
+        "capability_id": "joint_position",
+        "evidence_ids": [
+          "evidence:ros2:robot_launch:examples/caiquan_demo.py:8e96429058a0",
+          "evidence:ros2:robot_launch:examples/right_arm_return.py:17229a7d2622",
+          "evidence:ros2:robot_launch:examples/whole_body_demo.py:8e96429058a0",
+          "evidence:ros2:robot_launch:third_party/wy_arm_sdk/install/arm_control_interface/share/arm_control_interface/action/ArmMove.action:c064c3fe5f69",
+          "evidence:ros2:robot_launch:third_party/wy_arm_sdk/install/arm_control_interface/share/arm_control_interface/msg/ArmMotionError.msg:2f40df212eb0",
+          "evidence:ros2:robot_launch:examples/caiquan_demo.py:02f1f67ffdfc",
+          "evidence:ros2:robot_launch:examples/caiquan_demo.py:f3bfb5ff06db"
+        ],
+        "proposed_semantics": {
+          "arrival_tolerance_rad": 0.03,
+          "binding_operation": "send_action_goal",
+          "completion": [
+            "terminal_result",
+            "measured_arrival"
+          ],
+          "constants": {
+            "cart_pose": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "move_type": "MoveJ"
+          },
+          "endpoint": "/wy_robot1/right_arm_move_action",
+          "interface_type": "arm_control_interface/action/ArmMove",
+          "ordered_joints": [
+            "arm.right.joint.0",
+            "arm.right.joint.1",
+            "arm.right.joint.2",
+            "arm.right.joint.3",
+            "arm.right.joint.4",
+            "arm.right.joint.5",
+            "arm.right.joint.6"
+          ],
+          "result_code_field": "error_code.value",
+          "result_description_field": "error_description",
+          "settle_window_s": 0.2,
+          "state_binding": "joint_position_state",
+          "success_code": 0,
+          "target_field": "joint_angles",
+          "target_unit": "radian",
+          "timeout_s": 20.0,
+          "transport_kind": "ros2_action",
+          "unit": "radian"
+        }
+      },
+      "call_id": "call_01_4FRiQ1FSq6qGf59feiY69284",
+      "ok": false,
+      "result": {
+        "conflicts": [
+          "endpoint",
+          "interface_type"
+        ],
+        "message": "candidate is not fully supported by linked evidence",
+        "missing_fields": [
+          "binding_operation",
+          "timeout_s",
+          "target_unit",
+          "unit",
+          "state_binding",
+          "arrival_tolerance_rad",
+          "settle_window_s",
+          "completion",
+          "endpoint",
+          "interface_type"
+        ],
+        "reason": "candidate_not_supported_by_evidence"
+      },
+      "tool": "submit_candidate"
+    },
+    {
+      "arguments": {
+        "capability_id": "joint_position_state",
+        "evidence_ids": [
+          "evidence:ros2:robot_launch:examples/caiquan_demo.py:f3bfb5ff06db",
+          "evidence:ros2:robot_launch:third_party/wy_arm_sdk/install/arm_control_interface/share/arm_control_interface/msg/ArmState.msg:cf908b315d7a"
+        ],
+        "proposed_semantics": {
+          "binding_operation": "subscribe",
+          "endpoint": "/wy_robot1/right_arm_state",
+          "interface_type": "arm_control_interface/msg/ArmState",
+          "mode_field": "arm_mode",
+          "positions_field": "joint_angles",
+          "ready_values": [
+            104
+          ],
+          "transport_kind": "ros2_subscription"
+        }
+      },
+      "call_id": "call_00_LLVtYRP2tqmAX0mKJoQg6314",
+      "ok": false,
+      "result": {
+        "conflicts": [],
+        "message": "candidate is not fully supported by linked evidence",
+        "missing_fields": [
+          "binding_operation",
+          "stamp_field",
+          "fault_field",
+          "unit",
+          "ordered_joints",
+          "joint_limits"
+        ],
+        "reason": "candidate_not_supported_by_evidence"
+      },
+      "tool": "submit_candidate"
+    },
+    {
+      "arguments": {
+        "capability_id": "joint_position",
+        "evidence_ids": [
+          "evidence:ros2:robot_launch:examples/caiquan_demo.py:8e96429058a0",
+          "evidence:ros2:robot_launch:examples/right_arm_return.py:17229a7d2622",
+          "evidence:ros2:robot_launch:third_party/wy_arm_sdk/install/arm_control_interface/share/arm_control_interface/action/ArmMove.action:c064c3fe5f69",
+          "evidence:ros2:robot_launch:third_party/wy_arm_sdk/install/arm_control_interface/share/arm_control_interface/msg/ArmMotionError.msg:2f40df212eb0",
+          "evidence:ros2:robot_launch:examples/caiquan_demo.py:02f1f67ffdfc",
+          "evidence:ros2:robot_launch:examples/caiquan_demo.py:f3bfb5ff06db",
+          "evidence:ros2:robot_launch:third_party/wy_arm_sdk/install/arm_control_system/share/arm_control_system/config/dual_arm_system.yaml:32494002ac04"
+        ],
+        "proposed_semantics": {
+          "arrival_tolerance_rad": 0.03,
+          "binding_operation": "send_goal",
+          "completion": [
+            "terminal_result",
+            "measured_arrival"
+          ],
+          "constants": {
+            "cart_pose": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "move_type": "MoveJ"
+          },
+          "endpoint": "/wy_robot1/right_arm_move_action",
+          "interface_type": "arm_control_interface/action/ArmMove",
+          "ordered_joints": [
+            "arm.right.joint.0",
+            "arm.right.joint.1",
+            "arm.right.joint.2",
+            "arm.right.joint.3",
+            "arm.right.joint.4",
+            "arm.right.joint.5",
+            "arm.right.joint.6"
+          ],
+          "result_code_field": "error_code.value",
+          "result_description_field": "error_description",
+          "settle_window_s": 0.2,
+          "state_binding": "joint_position_state",
+          "success_code": 0,
+          "target_field": "joint_angles",
+          "target_unit": "radian",
+          "timeout_s": 20.0,
+          "transport_kind": "ros2_action",
+          "unit": "radian"
+        }
+      },
+      "call_id": "call_00_2mNiuxy8CK7LHhcRC8CP6799",
+      "ok": false,
+      "result": {
+        "conflicts": [
+          "endpoint",
+          "interface_type"
+        ],
+        "message": "candidate is not fully supported by linked evidence",
+        "missing_fields": [
+          "binding_operation",
+          "timeout_s",
+          "state_binding",
+          "arrival_tolerance_rad",
+          "settle_window_s",
+          "completion",
+          "endpoint",
+          "interface_type"
+        ],
+        "reason": "candidate_not_supported_by_evidence"
+      },
+      "tool": "submit_candidate"
+    },
+    {
+      "arguments": {
+        "capability_id": "joint_position",
+        "evidence_ids": [
+          "evidence:ros2:robot_launch:examples/caiquan_demo.py:8e96429058a0",
+          "evidence:ros2:robot_launch:third_party/wy_arm_sdk/install/arm_control_interface/share/arm_control_interface/action/ArmMove.action:c064c3fe5f69",
+          "evidence:ros2:robot_launch:third_party/wy_arm_sdk/install/arm_control_interface/share/arm_control_interface/msg/ArmMotionError.msg:2f40df212eb0",
+          "evidence:ros2:robot_launch:third_party/wy_arm_sdk/install/arm_control_system/share/arm_control_system/config/dual_arm_system.yaml:32494002ac04"
+        ],
+        "proposed_semantics": {
+          "binding_operation": "send_action_goal",
+          "constants": {
+            "cart_pose": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "move_type": "MoveJ"
+          },
+          "endpoint": "/wy_robot1/right_arm_move_action",
+          "interface_type": "arm_control_interface/action/ArmMove",
+          "ordered_joints": [
+            "arm.right.joint.0",
+            "arm.right.joint.1",
+            "arm.right.joint.2",
+            "arm.right.joint.3",
+            "arm.right.joint.4",
+            "arm.right.joint.5",
+            "arm.right.joint.6"
+          ],
+          "result_code_field": "error_code.value",
+          "result_description_field": "error_description",
+          "success_code": 0,
+          "target_field": "joint_angles",
+          "target_unit": "radian",
+          "transport_kind": "ros2_action",
+          "unit": "radian"
+        }
+      },
+      "call_id": "call_00_cY3Zarz2lNIlP0j4Xhjc9559",
+      "ok": false,
+      "result": {
+        "conflicts": [],
+        "message": "candidate is not fully supported by linked evidence",
+        "missing_fields": [
+          "binding_operation",
+          "timeout_s",
+          "state_binding",
+          "arrival_tolerance_rad",
+          "settle_window_s",
+          "completion"
+        ],
+        "reason": "candidate_not_supported_by_evidence"
+      },
+      "tool": "submit_candidate"
+    },
+    {
+      "arguments": {
+        "capability_id": "joint_position",
+        "evidence_ids": [
+          "evidence:ros2:robot_launch:examples/caiquan_demo.py:8e96429058a0",
+          "evidence:ros2:robot_launch:third_party/wy_arm_sdk/install/arm_control_interface/share/arm_control_interface/action/ArmMove.action:c064c3fe5f69",
+          "evidence:ros2:robot_launch:third_party/wy_arm_sdk/install/arm_control_interface/share/arm_control_interface/msg/ArmMotionError.msg:2f40df212eb0",
+          "evidence:ros2:robot_launch:examples/caiquan_demo.py:02f1f67ffdfc",
+          "evidence:ros2:robot_launch:examples/caiquan_demo.py:f3bfb5ff06db",
+          "evidence:ros2:robot_launch:third_party/wy_arm_sdk/install/arm_control_system/share/arm_control_system/config/dual_arm_system.yaml:32494002ac04"
+        ],
+        "proposed_semantics": {
+          "arrival_tolerance_rad": 0.03,
+          "binding_operation": "send_action_goal",
+          "completion": [
+            "terminal_result",
+            "measured_arrival"
+          ],
+          "constants": {
+            "cart_pose": [
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "move_type": "MoveJ"
+          },
+          "endpoint": "/wy_robot1/right_arm_move_action",
+          "interface_type": "arm_control_interface/action/ArmMove",
+          "ordered_joints": [
+            "arm.right.joint.0",
+            "arm.right.joint.1",
+            "arm.right.joint.2",
+            "arm.right.joint.3",
+            "arm.right.joint.4",
+            "arm.right.joint.5",
+            "arm.right.joint.6"
+          ],
+          "result_code_field": "error_code.value",
+          "result_description_field": "error_description",
+          "settle_window_s": 0.2,
+          "state_binding": "joint_position_state",
+          "success_code": 0,
+          "target_field": "joint_angles",
+          "target_unit": "radian",
+          "timeout_s": 20.0,
+          "transport_kind": "ros2_action",
+          "unit": "radian"
+        }
+      },
+      "call_id": "call_00_Q83zEMsWu4ET2jBGz9sB5503",
+      "ok": false,
+      "result": {
+        "conflicts": [
+          "endpoint",
+          "interface_type"
+        ],
+        "message": "candidate is not fully supported by linked evidence",
+        "missing_fields": [
+          "binding_operation",
+          "timeout_s",
+          "state_binding",
+          "arrival_tolerance_rad",
+          "settle_window_s",
+          "completion",
+          "endpoint",
+          "interface_type"
+        ],
+        "reason": "candidate_not_supported_by_evidence"
+      },
+      "tool": "submit_candidate"
+    },
+    {
+      "arguments": {
+        "capability_id": "joint_position_state",
+        "evidence_ids": [
+          "evidence:ros2:robot_launch:examples/caiquan_demo.py:f3bfb5ff06db",
+          "evidence:ros2:robot_launch:examples/right_arm_return.py:7abf3824f777",
+          "evidence:ros2:robot_launch:examples/whole_body_demo.py:43e0ad722b1f",
+          "evidence:ros2:robot_launch:third_party/wy_arm_sdk/install/arm_control_interface/share/arm_control_interface/msg/ArmState.msg:cf908b315d7a",
+          "evidence:ros2:robot_launch:third_party/wy_arm_sdk/install/arm_control_interface/share/arm_control_interface/msg/ArmFault.msg:911054d5c3ef",
+          "evidence:ros2:robot_launch:third_party/wy_arm_sdk/install/arm_control_interface/share/arm_control_interface/msg/ArmFaultType.msg:0fb2c8f771b9",
+          "evidence:ros2:robot_launch:third_party/wy_arm_sdk/install/arm_control_system/share/arm_control_system/config/dual_arm_system.yaml:32494002ac04"
+        ],
+        "proposed_semantics": {
+          "binding_operation": "subscribe",
+          "endpoint": "/wy_robot1/right_arm_state",
+          "fault_field": "arm_fault.fault_type.value",
+          "interface_type": "arm_control_interface/msg/ArmState",
+          "joint_limits": [
+            [
+              -2.9,
+              2.9
+            ],
+            [
+              -1.57,
+              1.57
+            ],
+            [
+              -2.45,
+              2.45
+            ],
+            [
+              -0.6,
+              2.3
+            ],
+            [
+              -2.8,
+              2.8
+            ],
+            [
+              -1.3,
+              1.3
+            ],
+            [
+              -1.3,
+              1.3
+            ]
+          ],
+          "mode_field": "arm_mode",
+          "ordered_joints": [
+            "arm.right.joint.0",
+            "arm.right.joint.1",
+            "arm.right.joint.2",
+            "arm.right.joint.3",
+            "arm.right.joint.4",
+            "arm.right.joint.5",
+            "arm.right.joint.6"
+          ],
+          "positions_field": "joint_angles",
+          "ready_values": [
+            104
+          ],
+          "stamp_field": "header.stamp",
+          "transport_kind": "ros2_subscription",
+          "unit": "radian"
+        }
+      },
+      "call_id": "call_00_HMR7JKeVCSjomOnx0GEZ3989",
+      "ok": false,
+      "result": {
+        "conflicts": [],
+        "message": "candidate is not fully supported by linked evidence",
+        "missing_fields": [
+          "binding_operation"
+        ],
+        "reason": "candidate_not_supported_by_evidence"
+      },
+      "tool": "submit_candidate"
+    }
+  ]
+}

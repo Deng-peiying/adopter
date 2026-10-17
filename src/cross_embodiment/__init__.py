@@ -19,10 +19,20 @@ from .runtime.safety import SafetyGuard
 from .runtime.mapping import ActionMapper
 from .hardware.manifest import EmbodimentManifest, load_manifest
 from .runtime.runtime import Runtime
+from .runtime.installed import RuntimeInfo
 from .sdk.robot import Command, Robot, connect
+from .protocol.types import Action, ActionSpec, CartesianTarget, CommandResult, JointTarget, Observation, Pose, RobotState
 
 __all__ = [
     "Command",
+    "Action",
+    "ActionSpec",
+    "CartesianTarget",
+    "CommandResult",
+    "JointTarget",
+    "Observation",
+    "Pose",
+    "RobotState",
     "AssetError",
     "CompatibilityError",
     "CrossEmbodimentError",
@@ -31,6 +41,7 @@ __all__ = [
     "EmbodimentManifest",
     "Robot",
     "Runtime",
+    "RuntimeInfo",
     "HardwarePackage",
     "HealthReport",
     "SafetyGuard",

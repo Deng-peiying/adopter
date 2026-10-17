@@ -1,0 +1,4 @@
+bool power_enable
+---
+bool success
+string error

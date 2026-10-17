@@ -1,0 +1,539 @@
+schema_version: capability-catalog/v0.1
+catalog_version: 0.1.0
+assessment_statuses:
+- native
+- derived
+- unsupported
+- unknown
+capabilities:
+- id: connect
+  category: lifecycle
+  binding_operations:
+  - connect
+  semantics:
+    kind: operation
+    input: null
+    output: null
+    units: null
+    frame: null
+    lifecycle: operation
+  required_for_profiles: []
+- id: disconnect
+  category: lifecycle
+  binding_operations:
+  - disconnect
+  semantics:
+    kind: operation
+    input: null
+    output: null
+    units: null
+    frame: null
+    lifecycle: operation
+  required_for_profiles: []
+- id: enable
+  category: lifecycle
+  binding_operations:
+  - enable
+  semantics:
+    kind: operation
+    input: null
+    output: null
+    units: null
+    frame: null
+    lifecycle: operation
+  required_for_profiles: []
+- id: disable
+  category: lifecycle
+  binding_operations:
+  - disable
+  semantics:
+    kind: operation
+    input: null
+    output: null
+    units: null
+    frame: null
+    lifecycle: operation
+  required_for_profiles: []
+- id: reset
+  category: lifecycle
+  binding_operations:
+  - reset
+  semantics:
+    kind: operation
+    input: null
+    output: null
+    units: null
+    frame: null
+    lifecycle: operation
+  required_for_profiles: []
+- id: stop
+  category: lifecycle
+  binding_operations:
+  - stop
+  semantics:
+    kind: operation
+    input: null
+    output: null
+    units: null
+    frame: null
+    lifecycle: operation
+  required_for_profiles: []
+- id: joint_position_state
+  category: state
+  binding_operations:
+  - joint_state
+  semantics:
+    kind: state
+    input: null
+    output:
+      type: joint-map
+    units: radian
+    frame: joint
+    lifecycle: sample
+  required_for_profiles: []
+- id: joint_velocity_state
+  category: state
+  binding_operations:
+  - joint_velocity_state
+  semantics:
+    kind: state
+    input: null
+    output: null
+    units: radian
+    frame: joint
+    lifecycle: sample
+  required_for_profiles: []
+- id: joint_effort_state
+  category: state
+  binding_operations:
+  - joint_effort_state
+  semantics:
+    kind: state
+    input: null
+    output: null
+    units: radian
+    frame: joint
+    lifecycle: sample
+  required_for_profiles: []
+- id: ee_pose_state
+  category: state
+  binding_operations:
+  - ee_pose_state
+  semantics:
+    kind: state
+    input: null
+    output: null
+    units: null
+    frame: required
+    lifecycle: sample
+  required_for_profiles: []
+- id: ee_velocity_state
+  category: state
+  binding_operations:
+  - ee_velocity_state
+  semantics:
+    kind: state
+    input: null
+    output: null
+    units: null
+    frame: required
+    lifecycle: sample
+  required_for_profiles: []
+- id: gripper_state
+  category: state
+  binding_operations:
+  - gripper_state
+  semantics:
+    kind: state
+    input: null
+    output: null
+    units: null
+    frame: null
+    lifecycle: sample
+  required_for_profiles: []
+- id: robot_mode_state
+  category: state
+  binding_operations:
+  - robot_mode_state
+  semantics:
+    kind: state
+    input: null
+    output: null
+    units: null
+    frame: null
+    lifecycle: sample
+  required_for_profiles: []
+- id: error_state
+  category: state
+  binding_operations:
+  - error_state
+  semantics:
+    kind: state
+    input: null
+    output: null
+    units: null
+    frame: null
+    lifecycle: sample
+  required_for_profiles: []
+- id: joint_position
+  category: joint_control
+  binding_operations:
+  - joint_position
+  semantics:
+    kind: operation
+    input:
+      type: joint-map
+    output: null
+    units: radian
+    frame: joint
+    lifecycle: command
+  required_for_profiles: []
+- id: joint_delta
+  category: joint_control
+  binding_operations:
+  - joint_delta
+  semantics:
+    kind: operation
+    input:
+      type: joint-map
+    output: null
+    units: radian
+    frame: joint
+    lifecycle: command
+  required_for_profiles: []
+- id: joint_velocity
+  category: joint_control
+  binding_operations:
+  - joint_velocity
+  semantics:
+    kind: operation
+    input: null
+    output: null
+    units: null
+    frame: joint
+    lifecycle: command
+  required_for_profiles: []
+- id: joint_torque
+  category: joint_control
+  binding_operations:
+  - joint_torque
+  semantics:
+    kind: operation
+    input: null
+    output: null
+    units: null
+    frame: joint
+    lifecycle: command
+  required_for_profiles: []
+- id: ee_pose
+  category: end_effector_control
+  binding_operations:
+  - cartesian_pose
+  semantics:
+    kind: operation
+    input: null
+    output: null
+    units: null
+    frame: required
+    lifecycle: command
+  required_for_profiles: []
+- id: ee_delta
+  category: end_effector_control
+  binding_operations:
+  - ee_delta
+  semantics:
+    kind: operation
+    input: null
+    output: null
+    units: null
+    frame: required
+    lifecycle: command
+  required_for_profiles: []
+- id: ee_velocity
+  category: end_effector_control
+  binding_operations:
+  - ee_velocity
+  semantics:
+    kind: operation
+    input: null
+    output: null
+    units: null
+    frame: required
+    lifecycle: command
+  required_for_profiles: []
+- id: gripper_open_close
+  category: gripper_control
+  binding_operations:
+  - gripper_open_close
+  semantics:
+    kind: operation
+    input: null
+    output: null
+    units: null
+    frame: null
+    lifecycle: command
+  required_for_profiles: []
+- id: gripper_position
+  category: gripper_control
+  binding_operations:
+  - gripper_position
+  semantics:
+    kind: operation
+    input: null
+    output: null
+    units: null
+    frame: null
+    lifecycle: command
+  required_for_profiles: []
+- id: gripper_velocity
+  category: gripper_control
+  binding_operations:
+  - gripper_velocity
+  semantics:
+    kind: operation
+    input: null
+    output: null
+    units: null
+    frame: null
+    lifecycle: command
+  required_for_profiles: []
+- id: gripper_force
+  category: gripper_control
+  binding_operations:
+  - gripper_force
+  semantics:
+    kind: operation
+    input: null
+    output: null
+    units: null
+    frame: null
+    lifecycle: command
+  required_for_profiles: []
+- id: rgb
+  category: sensor
+  binding_operations:
+  - rgb
+  semantics:
+    kind: operation
+    input: null
+    output: null
+    units: null
+    frame: null
+    lifecycle: operation
+  required_for_profiles: []
+- id: depth
+  category: sensor
+  binding_operations:
+  - depth
+  semantics:
+    kind: operation
+    input: null
+    output: null
+    units: null
+    frame: null
+    lifecycle: operation
+  required_for_profiles: []
+- id: pointcloud
+  category: sensor
+  binding_operations:
+  - pointcloud
+  semantics:
+    kind: operation
+    input: null
+    output: null
+    units: null
+    frame: null
+    lifecycle: operation
+  required_for_profiles: []
+- id: force_torque
+  category: sensor
+  binding_operations:
+  - force_torque
+  semantics:
+    kind: operation
+    input: null
+    output: null
+    units: null
+    frame: null
+    lifecycle: operation
+  required_for_profiles: []
+- id: imu
+  category: sensor
+  binding_operations:
+  - imu
+  semantics:
+    kind: operation
+    input: null
+    output: null
+    units: null
+    frame: null
+    lifecycle: operation
+  required_for_profiles: []
+- id: digital_io
+  category: io
+  binding_operations:
+  - digital_io
+  semantics:
+    kind: operation
+    input: null
+    output: null
+    units: null
+    frame: null
+    lifecycle: operation
+  required_for_profiles: []
+- id: analog_io
+  category: io
+  binding_operations:
+  - analog_io
+  semantics:
+    kind: operation
+    input: null
+    output: null
+    units: null
+    frame: null
+    lifecycle: operation
+  required_for_profiles: []
+- id: tool_io
+  category: io
+  binding_operations:
+  - tool_io
+  semantics:
+    kind: operation
+    input: null
+    output: null
+    units: null
+    frame: null
+    lifecycle: operation
+  required_for_profiles: []
+- id: state_streaming
+  category: timing
+  binding_operations:
+  - state_streaming
+  semantics:
+    kind: operation
+    input: null
+    output: null
+    units: null
+    frame: null
+    lifecycle: operation
+  required_for_profiles: []
+- id: streaming_control
+  category: timing
+  binding_operations:
+  - streaming_control
+  semantics:
+    kind: operation
+    input: null
+    output: null
+    units: null
+    frame: null
+    lifecycle: operation
+  required_for_profiles: []
+- id: timestamp
+  category: timing
+  binding_operations:
+  - timestamp
+  semantics:
+    kind: operation
+    input: null
+    output: null
+    units: null
+    frame: null
+    lifecycle: operation
+  required_for_profiles: []
+- id: command_frequency
+  category: timing
+  binding_operations:
+  - command_frequency
+  semantics:
+    kind: operation
+    input: null
+    output: null
+    units: null
+    frame: null
+    lifecycle: operation
+  required_for_profiles: []
+- id: state_frequency
+  category: timing
+  binding_operations:
+  - state_frequency
+  semantics:
+    kind: operation
+    input: null
+    output: null
+    units: null
+    frame: null
+    lifecycle: operation
+  required_for_profiles: []
+- id: estop_state
+  category: safety
+  binding_operations:
+  - estop_state
+  semantics:
+    kind: operation
+    input: null
+    output: null
+    units: null
+    frame: null
+    lifecycle: operation
+  required_for_profiles: []
+- id: protective_stop_state
+  category: safety
+  binding_operations:
+  - protective_stop_state
+  semantics:
+    kind: operation
+    input: null
+    output: null
+    units: null
+    frame: null
+    lifecycle: operation
+  required_for_profiles: []
+- id: joint_limit
+  category: safety
+  binding_operations:
+  - joint_limit
+  semantics:
+    kind: operation
+    input: null
+    output: null
+    units: null
+    frame: joint
+    lifecycle: operation
+  required_for_profiles: []
+- id: velocity_limit
+  category: safety
+  binding_operations:
+  - velocity_limit
+  semantics:
+    kind: operation
+    input: null
+    output: null
+    units: null
+    frame: null
+    lifecycle: operation
+  required_for_profiles: []
+- id: workspace_limit
+  category: safety
+  binding_operations:
+  - workspace_limit
+  semantics:
+    kind: operation
+    input: null
+    output: null
+    units: null
+    frame: null
+    lifecycle: operation
+  required_for_profiles: []
+- id: watchdog
+  category: safety
+  binding_operations:
+  - watchdog
+  semantics:
+    kind: operation
+    input: null
+    output: null
+    units: null
+    frame: null
+    lifecycle: operation
+  required_for_profiles: []

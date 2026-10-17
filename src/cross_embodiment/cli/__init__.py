@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import asdict
 import json
 import os
 import runpy
@@ -12,6 +13,8 @@ import threading
 import time
 from pathlib import Path
 from typing import Any
+
+import yaml
 
 from ..errors import CrossEmbodimentError, PackageError
 from ..driver.backend import load_backend_entrypoint
@@ -34,6 +37,12 @@ def _registry_root(project_path: Path, configured: Path | None = None) -> Path:
         if (candidate / "assets" / "catalog.yaml").is_file():
             return candidate
     return Path.home() / ".cross_embodiment" / "registry"
+
+
+def _package_store(configured: Path | None = None) -> Path:
+    if configured is not None:
+        return configured
+    return Path(os.environ.get("CROSS_EMBODIMENT_STORE", Path.home() / ".cross_embodiment"))
 
 
 def _load(
@@ -250,6 +259,9 @@ def _host(project_path: Path, *, robot_name: str | None, control_enabled: bool, 
         robot = connect(adapter, manifest, control_enabled=control_enabled, dry_run=False,
                         connection=connection, manage_process=manage_process)
         robot.lifecycle.connect()
+        wait_ready = getattr(robot.adapter, "wait_ready", None)
+        if wait_ready is not None and not wait_ready(float(connection.get("startup_timeout_sec", 15.0))):
+            raise PackageError("Mapped backend has no fresh ready state or Action server")
         _write_json_atomic(active, {"pid": os.getpid(), "robot": name, "package": package.name, "version": package.version})
         _write_json_atomic(ready, {"pid": os.getpid(), "started_at": time.time()})
         while not stopping.wait(0.5):
@@ -328,12 +340,453 @@ def _build_parser() -> argparse.ArgumentParser:
     host.add_argument("--robot")
     host.add_argument("--control-enabled", action="store_true")
     host.add_argument("--registry", type=Path)
+    package = sub.add_parser("package", help="build and manage immutable Hardware Packages")
+    package_commands = package.add_subparsers(dest="package_command", required=True)
+    package_build = package_commands.add_parser("build")
+    package_build.add_argument("--package-root", required=True, type=Path)
+    package_build.add_argument("--output", required=True, type=Path)
+    package_build.add_argument("--json", action="store_true")
+    package_install = package_commands.add_parser("install")
+    package_install.add_argument("--artifact", required=True, type=Path)
+    package_install.add_argument("--store", type=Path)
+    package_install.add_argument("--json", action="store_true")
+    package_list = package_commands.add_parser("list")
+    package_list.add_argument("--store", type=Path)
+    package_list.add_argument("--json", action="store_true")
+    package_inspect = package_commands.add_parser("inspect")
+    package_inspect.add_argument("reference")
+    package_inspect.add_argument("--store", type=Path)
+    package_inspect.add_argument("--json", action="store_true")
+    package_activate = package_commands.add_parser("activate")
+    package_activate.add_argument("reference")
+    package_activate.add_argument("--instance", required=True, type=Path)
+    package_activate.add_argument("--store", type=Path)
+    package_activate.add_argument("--json", action="store_true")
+    package_use = package_commands.add_parser("use")
+    package_use.add_argument("--instance", required=True)
+    package_use.add_argument("--store", type=Path)
+    package_use.add_argument("--json", action="store_true")
+    package_deactivate = package_commands.add_parser("deactivate")
+    package_deactivate.add_argument("--instance", required=True)
+    package_deactivate.add_argument("--store", type=Path)
+    package_deactivate.add_argument("--json", action="store_true")
+    package_uninstall = package_commands.add_parser("uninstall")
+    package_uninstall.add_argument("reference")
+    package_uninstall.add_argument("--store", type=Path)
+    package_uninstall.add_argument("--json", action="store_true")
+    onboard = sub.add_parser("onboard", help="inspect vendor assets and generate a Hardware Package")
+    phases = onboard.add_subparsers(dest="onboard_phase", required=True)
+    inspect = phases.add_parser("inspect")
+    inspect.add_argument("--vendor-root", type=Path, action="append", required=True)
+    inspect.add_argument(
+        "--platform-root",
+        type=Path,
+        help="platform Catalog/Schema root (defaults to assets shipped in the wheel)",
+    )
+    inspect.add_argument("--run-root", type=Path, required=True)
+    inspect.add_argument("--denied-root", type=Path, action="append", default=[])
+    inspect.add_argument("--json", action="store_true")
+    assess = phases.add_parser("assess")
+    assess.add_argument("--run-root", type=Path, required=True)
+    assess.add_argument("--scope", type=Path, required=True)
+    assess.add_argument("--candidates", type=Path, required=True)
+    assess.add_argument("--json", action="store_true")
+    derive = phases.add_parser("derive-candidates")
+    derive.add_argument("--run-root", type=Path, required=True)
+    derive.add_argument("--scope", type=Path, required=True)
+    derive.add_argument("--json", action="store_true")
+    generate = phases.add_parser("generate")
+    generate.add_argument("--run-root", type=Path, required=True)
+    generate.add_argument("--identity", type=Path, required=True)
+    generate.add_argument("--json", action="store_true")
+    generate_candidate = phases.add_parser("generate-candidate")
+    generate_candidate.add_argument("--run-root", type=Path, required=True)
+    generate_candidate.add_argument("--identity", type=Path, required=True)
+    generate_candidate.add_argument("--json", action="store_true")
+    for name in ("validate", "validate-candidate", "report"):
+        phase = phases.add_parser(name)
+        phase.add_argument("--run-root", type=Path, required=True)
+        phase.add_argument("--json", action="store_true")
+    agent = phases.add_parser(
+        "agent",
+        help="run evidence reasoning through the stateful typed-tool onboarding protocol",
+    )
+    agent.add_argument("--run-root", type=Path, required=True)
+    agent.add_argument(
+        "--platform-root",
+        type=Path,
+        help="platform Catalog/Schema root (defaults to assets shipped in the wheel)",
+    )
+    agent.add_argument("--identity", type=Path, required=True)
+    agent.add_argument("--device", required=True)
+    agent.add_argument("--capability", action="append", required=True)
+    agent.add_argument("--joint", action="append", required=True)
+    agent.add_argument("--provider", choices=("deepseek",), default="deepseek")
+    agent.add_argument("--model", default="deepseek-chat")
+    agent.add_argument("--thinking", action="store_true")
+    agent.add_argument("--max-turns", type=int, default=32)
+    agent.add_argument("--output", type=Path)
+    agent.add_argument("--json", action="store_true")
+    confirm_policy = phases.add_parser(
+        "confirm-policy",
+        help=(
+            "confirm an explicit operator Runtime Completion Policy and build "
+            "a runtime package without connecting to hardware"
+        ),
+    )
+    confirm_policy.add_argument("--run-root", type=Path, required=True)
+    confirm_policy.add_argument("--timeout-s", type=float, required=True)
+    confirm_policy.add_argument(
+        "--arrival-tolerance-rad", type=float, required=True,
+    )
+    confirm_policy.add_argument("--settle-window-s", type=float, required=True)
+    confirm_policy.add_argument("--source", required=True)
+    confirm_policy.add_argument("--operator", required=True)
+    confirm_policy.add_argument("--reference", required=True)
+    confirm_policy.add_argument("--confirmed-at")
+    confirm_policy.add_argument("--json", action="store_true")
+    preflight = phases.add_parser(
+        "preflight",
+        help="read state through an explicit directory or activated installed Hardware Package",
+    )
+    preflight_source = preflight.add_mutually_exclusive_group(required=True)
+    preflight_source.add_argument("--package-root", type=Path)
+    preflight_source.add_argument("--instance")
+    preflight.add_argument("--store", type=Path)
+    preflight.add_argument("--device", required=True)
+    preflight.add_argument("--output", type=Path)
+    preflight.add_argument("--json", action="store_true")
+    accept_l3 = phases.add_parser(
+        "accept-l3",
+        help="operator-confirmed target and return through an explicit or activated package",
+    )
+    accept_source = accept_l3.add_mutually_exclusive_group(required=True)
+    accept_source.add_argument("--package-root", type=Path)
+    accept_source.add_argument("--instance")
+    accept_l3.add_argument("--store", type=Path)
+    accept_l3.add_argument("--device", required=True)
+    accept_l3.add_argument("--target", type=Path, required=True)
+    accept_l3.add_argument("--operator", required=True)
+    accept_l3.add_argument("--output", type=Path)
+    accept_l3.add_argument("--json", action="store_true")
     return parser
+
+
+def _emit_package(value: Any, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(value, ensure_ascii=False, sort_keys=True))
+    else:
+        print(yaml.safe_dump(value, sort_keys=False).rstrip())
+
+
+def _package_command(args) -> int:
+    from ..package.artifact import build_package_artifact
+    from ..package.lifecycle import PackageLifecycle
+
+    if args.package_command == "build":
+        record = build_package_artifact(args.package_root, args.output)
+        result = record.to_dict()
+        result.update({"artifact": str(args.output.resolve()), "hardware_connected": False})
+    else:
+        lifecycle = PackageLifecycle(_package_store(args.store))
+        if args.package_command == "install":
+            result = lifecycle.install(args.artifact).to_dict()
+            result["hardware_connected"] = False
+        elif args.package_command == "list":
+            result = [item.to_dict() for item in lifecycle.list()]
+        elif args.package_command == "inspect":
+            result = lifecycle.inspect(args.reference).to_dict()
+        elif args.package_command == "activate":
+            result = lifecycle.activate(args.reference, args.instance).to_dict()
+            result["hardware_connected"] = False
+        elif args.package_command == "use":
+            result = lifecycle.resolve_use(args.instance).to_dict()
+        elif args.package_command == "deactivate":
+            lifecycle.deactivate(args.instance)
+            result = {"deactivated": args.instance, "hardware_connected": False}
+        elif args.package_command == "uninstall":
+            removed = lifecycle.uninstall(args.reference)
+            result = asdict(removed)
+            result["hardware_connected"] = False
+        else:  # pragma: no cover - argparse enforces the command set
+            raise ValueError(f"Unknown package command: {args.package_command}")
+    _emit_package(result, args.json)
+    return 0
+
+
+def _emit_onboarding(value: dict[str, Any], as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(value, sort_keys=True))
+    else:
+        print(yaml.safe_dump(value, sort_keys=False).rstrip())
+
+
+def _plain_onboarding_value(value):
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, dict):
+        return {str(key): _plain_onboarding_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_plain_onboarding_value(item) for item in value]
+    return value
+
+
+def _write_provider_transcript(
+    path: Path,
+    provider,
+    provider_name: str,
+    model: str,
+) -> None:
+    document = {
+        "schema_version": "onboarding-provider-transcript/v0.1",
+        "provider": provider_name,
+        "model": model,
+        "messages": _plain_onboarding_value(provider.messages),
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(document, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _onboard(args) -> int:
+    if args.onboard_phase == "confirm-policy":
+        from ..onboarding.workflow import OnboardingWorkflow
+
+        result = OnboardingWorkflow(args.run_root).confirm_runtime_policy(
+            timeout_s=args.timeout_s,
+            arrival_tolerance_rad=args.arrival_tolerance_rad,
+            settle_window_s=args.settle_window_s,
+            source=args.source,
+            operator=args.operator,
+            reference=args.reference,
+            confirmed_at=args.confirmed_at,
+        )
+        payload = _plain_onboarding_value(asdict(result))
+        payload["phase"] = "confirm_policy"
+        _emit_onboarding(payload, args.json)
+        return 0 if result.conformance_passed else 14
+    if args.onboard_phase == "preflight":
+        from ..onboarding.l3 import (
+            preflight_generated_package,
+            preflight_installed_package,
+        )
+
+        if args.instance is not None:
+            record = preflight_installed_package(
+                _package_store(args.store), args.instance, args.device,
+            )
+        else:
+            if args.store is not None:
+                raise ValueError("--store requires --instance")
+            record = preflight_generated_package(args.package_root, args.device)
+        if args.output is not None:
+            record.write_json(args.output)
+        _emit_onboarding(record.to_dict(), args.json)
+        return 0
+    if args.onboard_phase == "accept-l3":
+        from ..onboarding.l3 import (
+            execute_generated_package_round_trip,
+            execute_installed_package_round_trip,
+            preflight_generated_package,
+            preflight_installed_package,
+        )
+
+        target_document = yaml.safe_load(args.target.read_text(encoding="utf-8")) or {}
+        positions = target_document.get("positions") if isinstance(target_document, dict) else None
+        if not isinstance(positions, dict) or not positions:
+            raise ValueError("L3 target file must contain a non-empty positions mapping")
+        positions = {str(name): float(value) for name, value in positions.items()}
+        if args.instance is not None:
+            store = _package_store(args.store)
+            preview = preflight_installed_package(store, args.instance, args.device)
+        else:
+            if args.store is not None:
+                raise ValueError("--store requires --instance")
+            store = None
+            preview = preflight_generated_package(args.package_root, args.device)
+        if preview.state_sample.get("status") != "ready":
+            details = preview.state_sample.get("details") or {}
+            raise ValueError(
+                f"Device {args.device} is not ready "
+                f"(mode={details.get('backend_mode')}, "
+                f"fault_code={details.get('backend_fault_code')}); "
+                "no authorization requested and no motion sent"
+            )
+        print("L3 acceptance preview:")
+        print(yaml.safe_dump({
+            "package_root": str(preview.package_root),
+            "package_tree_sha256": preview.package_tree_sha256,
+            "mapping_path": str(preview.mapping_path),
+            "mapping_sha256": preview.mapping_sha256,
+            "backend_id": preview.backend_id,
+            "backend_entrypoint": preview.backend_entrypoint,
+            "load_source": getattr(preview, "load_source", "explicit_package_root"),
+            "instance_id": getattr(preview, "instance_id", None),
+            "installed_package_digest": getattr(
+                preview, "installed_package_digest", None,
+            ),
+            "device_id": args.device,
+            "current_state": preview.state_sample,
+            "probe_target": positions,
+            "return_target": "fresh measured state captured immediately before the probe",
+            "operations": 2,
+        }, sort_keys=False).rstrip())
+        confirmation = input("Type EXECUTE L3 to authorize this probe and return; anything else cancels: ")
+        if confirmation.strip() != "EXECUTE L3":
+            print("L3 acceptance cancelled; no motion command sent.")
+            return 2
+        if args.instance is not None:
+            record = execute_installed_package_round_trip(
+                store,
+                args.instance,
+                args.device,
+                positions,
+                operator=args.operator,
+                authorized=True,
+            )
+        else:
+            record = execute_generated_package_round_trip(
+                args.package_root,
+                args.device,
+                positions,
+                operator=args.operator,
+                authorized=True,
+            )
+        if args.output is not None:
+            record.write_json(args.output)
+        _emit_onboarding(record.to_dict(), args.json)
+        return 0 if record.classification == "passed" else 12
+
+    if args.onboard_phase == "agent":
+        from ..onboarding.agent import OnboardingAgent, OnboardingGoal
+        from ..onboarding.providers import DeepSeekProvider
+        from ..onboarding.workflow import OnboardingWorkflow
+
+        required_capabilities = {"joint_position_state", "joint_position"}
+        if (
+            len(args.capability) != len(required_capabilities)
+            or set(args.capability) != required_capabilities
+        ):
+            raise ValueError(
+                "first-version onboarding requires exactly joint_position_state and joint_position"
+            )
+        workflow = OnboardingWorkflow(args.run_root, args.platform_root)
+        provider = DeepSeekProvider(model=args.model, thinking=args.thinking)
+        result = OnboardingAgent(provider, max_turns=args.max_turns).run(
+            OnboardingGoal(
+                device_id=args.device,
+                capability_ids=tuple(args.capability),
+                ordered_joints=tuple(args.joint),
+                identity_path=args.identity,
+            ),
+            workflow,
+        )
+
+        payload = _plain_onboarding_value(asdict(result))
+        payload.update({
+            "phase": "agent",
+            "provider": args.provider,
+            "model": args.model,
+            "motion_sent": False,
+        })
+        output = args.output or (args.run_root / "agent-run.json")
+        output.parent.mkdir(parents=True, exist_ok=True)
+        transcript_path = args.run_root / "provider-transcript.json"
+        _write_provider_transcript(
+            transcript_path, provider, args.provider, args.model,
+        )
+        payload["provider_transcript"] = str(transcript_path)
+        output.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        _emit_onboarding(payload, args.json)
+        return 0 if result.completed else 15
+
+    from ..onboarding.workflow import AssetInsufficiency, ConformanceFailure, OnboardingWorkflow
+
+    workflow = OnboardingWorkflow(
+        args.run_root,
+        getattr(args, "platform_root", None),
+    )
+    if args.onboard_phase == "inspect":
+        result = workflow.inspect(tuple(args.vendor_root), tuple(args.denied_root))
+    elif args.onboard_phase == "assess":
+        coverage = workflow.assess(args.scope, args.candidates)
+        complete = all(item.status in {"native", "derived"} and not item.conflicts for item in coverage.assessments)
+        result = {"phase": "assess", "complete": complete, "assessments": [
+            {"capability_id": item.capability_id, "status": item.status, "conflicts": list(item.conflicts)}
+            for item in coverage.assessments
+        ], "motion_sent": False}
+        _emit_onboarding(result, args.json)
+        return 0 if complete else AssetInsufficiency.exit_code
+    elif args.onboard_phase == "derive-candidates":
+        coverage = workflow.derive_candidates(args.scope)
+        result = {
+            "phase": "derive-candidates",
+            "candidate_path": str(
+                workflow.run_root / "deterministic-candidates.yaml"
+            ),
+            "assessments": [{
+                "capability_id": item.capability_id,
+                "status": item.status,
+                "candidate_valid": item.candidate_valid,
+                "interface_mapped": item.mapping_complete,
+                "execution_policy_complete": item.execution_policy_complete,
+                "missing_fields": [entry.field for entry in item.missing],
+            } for item in coverage.assessments],
+            "motion_sent": False,
+        }
+    elif args.onboard_phase == "generate":
+        generated = workflow.generate(args.identity)
+        result = {"phase": "generate", "package_root": str(generated.root), "motion_sent": False}
+    elif args.onboard_phase == "generate-candidate":
+        generated = workflow.generate_candidate(args.identity)
+        result = {
+            "phase": "generate-candidate",
+            "package_root": str(generated.root),
+            "package_status": generated.package_status,
+            "live_execution_ready": False,
+            "motion_sent": False,
+        }
+    elif args.onboard_phase == "validate":
+        report = workflow.validate()
+        result = {"phase": "validate", "passed": report.passed, "checks": list(report.checks), "failures": list(report.failures), "resolved_package_root": str(report.resolved_package_root), "resolved_mapping_path": str(report.resolved_mapping_path) if report.resolved_mapping_path else None, "motion_sent": False}
+        _emit_onboarding(result, args.json)
+        return 0 if report.passed else ConformanceFailure.exit_code
+    elif args.onboard_phase == "validate-candidate":
+        report = workflow.validate_candidate()
+        result = {
+            "phase": "validate-candidate",
+            "passed": report.passed,
+            "checks": list(report.checks),
+            "failures": list(report.failures),
+            "resolved_package_root": str(report.resolved_package_root),
+            "resolved_mapping_path": (
+                str(report.resolved_mapping_path)
+                if report.resolved_mapping_path else None
+            ),
+            "candidate_only": True,
+            "live_execution_ready": False,
+            "motion_sent": False,
+        }
+        _emit_onboarding(result, args.json)
+        return 0 if report.passed else ConformanceFailure.exit_code
+    else:
+        result = workflow.report()
+    _emit_onboarding(result, args.json)
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     try:
+        if args.command == "package":
+            return _package_command(args)
+        if args.command == "onboard":
+            return _onboard(args)
         if args.command == "validate":
             _validate(args.project, args.registry)
             print(f"valid: {args.project}")
@@ -367,6 +820,12 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     except (CrossEmbodimentError, OSError, ValueError, KeyError) as exc:
         print(f"ce: error: {exc}", file=sys.stderr)
+        try:
+            from ..onboarding.workflow import OnboardingWorkflowError
+            if isinstance(exc, OnboardingWorkflowError):
+                return exc.exit_code
+        except ImportError:
+            pass
         return 2
 
 

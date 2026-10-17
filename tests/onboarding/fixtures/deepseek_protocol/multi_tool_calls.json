@@ -1,0 +1,45 @@
+{
+  "message": {
+    "content": "I'll start by surveying the evidence available for the two scoped capabilities.",
+    "role": "assistant",
+    "tool_calls": [
+      {
+        "function": {
+          "arguments": "{\"claim_type\": \"ros2_interface_definition\"}",
+          "name": "list_evidence"
+        },
+        "id": "call_00_5f27qG9o81WEeO41SEIk8506",
+        "index": 0,
+        "type": "function"
+      },
+      {
+        "function": {
+          "arguments": "{\"claim_type\": \"ros2_action_usage\"}",
+          "name": "list_evidence"
+        },
+        "id": "call_01_xnNhp3NO8WC3hLxyhpBT7289",
+        "index": 1,
+        "type": "function"
+      },
+      {
+        "function": {
+          "arguments": "{\"claim_type\": \"ros2_subscription_usage\"}",
+          "name": "list_evidence"
+        },
+        "id": "call_02_3KsCwynU9jIRWuH2UMGD5370",
+        "index": 2,
+        "type": "function"
+      },
+      {
+        "function": {
+          "arguments": "{\"claim_type\": \"joint_arrival_policy\"}",
+          "name": "list_evidence"
+        },
+        "id": "call_03_4Xf8XcTOIZ3SVcPIBR1M6999",
+        "index": 3,
+        "type": "function"
+      }
+    ]
+  },
+  "source_run": "/tmp/ce-onboarding/weiyi-right-arm-20261015-deepseek-4/deepseek-exchange-failed-multicall/turn-01-response.json"
+}

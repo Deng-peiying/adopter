@@ -1,0 +1,12 @@
+device_id: test_arm
+base_link: base_link
+tip_link: tip_link
+units:
+  length: metre
+  angle: radian
+joints:
+  - canonical_name: arm.test.joint.0
+    model_name: joint_1
+  - canonical_name: arm.test.joint.1
+    model_name: joint_2
+

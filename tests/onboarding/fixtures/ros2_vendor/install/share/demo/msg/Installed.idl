@@ -1,0 +1,1 @@
+module demo { module msg { struct Installed { sequence<double, 7> values; }; }; };

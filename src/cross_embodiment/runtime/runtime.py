@@ -84,17 +84,7 @@ class Runtime:
 
     def apply(self, action: Action):
         self._validate_action(action)
-        state = self.robot.state()
-        adapter = self.robot.adapter
-        self.safety.validate(
-            action,
-            state,
-            self.robot.manifest,
-            control_enabled=getattr(adapter, "control_enabled", True),
-            dry_run=getattr(adapter, "dry_run", False),
-        )
-        commands = self.mapper.map(action, self.robot.manifest)
-        return [self.robot.command(command) for command in commands]
+        return self.robot.command(action)
 
     def step(self):
         observation = self.observe()

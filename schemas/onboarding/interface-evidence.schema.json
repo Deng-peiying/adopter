@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cross-embodiment.dev/schemas/onboarding/interface-evidence.schema.json",
+  "title": "Interface evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "evidence"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "interface-evidence/v0.1"
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "evidence_id",
+          "source_asset_ids",
+          "source_path",
+          "claim_type",
+          "claims",
+          "provenance",
+          "confidence_boundary",
+          "level"
+        ],
+        "properties": {
+          "evidence_id": {
+            "type": "string"
+          },
+          "source_asset_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "source_path": {
+            "type": "string"
+          },
+          "claim_type": {
+            "type": "string"
+          },
+          "claims": {
+            "type": "object"
+          },
+          "provenance": {
+            "type": "object"
+          },
+          "confidence_boundary": {
+            "type": "string"
+          },
+          "level": {
+            "enum": [
+              "declared",
+              "observed",
+              "runtime_read",
+              "hardware_motion"
+            ]
+          },
+          "conflict_group": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

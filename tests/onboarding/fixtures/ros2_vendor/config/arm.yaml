@@ -1,0 +1,8 @@
+/wy/arm:
+  ros__parameters:
+    right_arm:
+      joint_list: [right_1, right_2]
+    right_1:
+      joint_soft_limit: [-2.0, 2.0] # radian
+    right_2:
+      joint_soft_limit: [-1.0, 1.0] # radian

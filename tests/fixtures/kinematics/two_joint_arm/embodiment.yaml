@@ -1,0 +1,17 @@
+schema_version: embodiment/v0.2
+embodiment:
+  type: test_arm
+  dof: 2
+devices:
+  - id: test_arm
+    type: arm
+    joints:
+      - canonical_name: arm.test.joint.0
+        type: revolute
+        unit: radian
+        limits: [-3.0, 3.0]
+      - canonical_name: arm.test.joint.1
+        type: revolute
+        unit: radian
+        limits: [-3.0, 3.0]
+

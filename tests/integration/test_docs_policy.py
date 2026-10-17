@@ -11,3 +11,24 @@ class DocsPolicyTests(unittest.TestCase):
         text = Path(".gitignore").read_text(encoding="utf-8")
         self.assertIn("outputs/", text)
 
+    def test_readme_documents_installed_instance_python_runtime(self):
+        text = Path("README.md").read_text(encoding="utf-8")
+        for required in (
+            "Robot.from_instance(",
+            "allow_motion=False",
+            "allow_motion=True",
+            "target = dict(state.positions)",
+            "Robot.from_instance()` 不会启动厂商 Driver",
+            "robot.connect()` 不会使能机器人",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, text)
+
+    def test_runtime_docs_keep_driver_lifecycle_independent(self):
+        package = Path("docs/package-lifecycle.md").read_text(encoding="utf-8")
+        l3 = Path("docs/onboarding/installed-package-l3.md").read_text(encoding="utf-8")
+        self.assertIn("Robot.from_instance()", package)
+        self.assertIn("Driver Lifecycle", package)
+        self.assertIn("shared installed Runtime loader", l3)
+        self.assertIn("allow_motion=False", l3)
+

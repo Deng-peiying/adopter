@@ -2,7 +2,7 @@
 
 ## Goal
 
-Align the repository with `docs/architecture/cross-embodiment-sdk-design-v0.3.md`: separate SDK core, installable WY Hardware Package, and user project; make package resolution and installation real; allow the WY project to start from its own declared package without referencing `/home/robot/下载/robot_launch`.
+Align the repository with `docs/architecture/cross-embodiment-sdk-design-v0.3.md`: separate SDK core, installable WY Hardware Package, and user project; make package resolution and installation real; allow the WY project to start from its own declared package without referencing a developer-local vendor runtime path.
 
 ## Constraints and success criteria
 
@@ -53,7 +53,7 @@ Implement install → validate → up → run → down against the installed pac
 
 ### 7. End-to-end verification and documentation
 
-Run focused tests then the complete suite; test install into a temporary package store, relocation of the user project, and package startup command resolution from an installed package fixture. Verify no code path references `/home/robot/下载/robot_launch`. Document host prerequisites and explicitly record that no real motion test was run.
+Run focused tests then the complete suite; test install into a temporary package store, relocation of the user project, and package startup command resolution from an installed package fixture. Verify no code path references a developer-local vendor runtime path. Document host prerequisites and explicitly record that no real motion test was run.
 
 ## Review risks
 

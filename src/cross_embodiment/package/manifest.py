@@ -137,6 +137,10 @@ def _yaml(path: Path) -> dict[str, Any]:
 def load_package_manifest(path: str | Path) -> HardwarePackage:
     path = Path(path)
     data = _yaml(path)
+    if data.get("schema_version") != "hardware-package/v0.1":
+        raise PackageError(
+            "Package schema_version must be hardware-package/v0.1"
+        )
     package = data.get("package") or {}
     required = [key for key in ("name", "version", "vendor", "model", "type") if key not in package]
     if required:
@@ -156,8 +160,14 @@ def load_package_manifest(path: str | Path) -> HardwarePackage:
             )
             for item in entries
         ]
+    embodiment_manifest = data.get("embodiment_manifest")
+    if not isinstance(embodiment_manifest, str) or not embodiment_manifest:
+        raise PackageError("Package requires embodiment_manifest")
+    backend_entries = data.get("backends") or []
+    if not isinstance(backend_entries, list) or not backend_entries:
+        raise PackageError("Package requires at least one Backend")
     backends = []
-    for item in data.get("backends") or []:
+    for item in backend_entries:
         if "id" not in item or "type" not in item:
             raise PackageError("Backend requires id and type")
         backends.append(
@@ -179,7 +189,7 @@ def load_package_manifest(path: str | Path) -> HardwarePackage:
         model=str(package["model"]),
         type=str(package["type"]),
         root=path.parent,
-        embodiment_manifest=data.get("embodiment_manifest"),
+        embodiment_manifest=embodiment_manifest,
         assets=assets,
         backends=backends,
         defaults=dict(data.get("defaults") or {}),
@@ -191,7 +201,14 @@ def _asset_digest(path: Path) -> str:
     if path.is_file():
         return hashlib.sha256(path.read_bytes()).hexdigest()
     digest = hashlib.sha256()
-    files = sorted(item for item in path.rglob("*") if item.is_file())
+    ignored = {".git", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache"}
+    files = sorted(
+        item
+        for item in path.rglob("*")
+        if item.is_file()
+        and not any(part in ignored for part in item.relative_to(path).parts)
+        and item.suffix != ".pyc"
+    )
     for item in files:
         relative = item.relative_to(path).as_posix()
         digest.update(relative.encode("utf-8"))
