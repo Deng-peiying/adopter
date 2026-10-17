@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cross-embodiment.dev/schemas/policy/v0.1",
+  "title": "Policy Package manifest",
+  "type": "object",
+  "required": ["schema_version", "policy"],
+  "properties": {
+    "schema_version": {"const": "policy-package/v0.1"},
+    "policy": {"type": "object", "required": ["name", "version", "entrypoint"], "properties": {"name": {"type": "string"}, "version": {"type": "string"}, "entrypoint": {"type": "string"}}},
+    "requirements": {"type": "object"},
+    "assets": {"type": "object"}
+  },
+  "additionalProperties": true
+}

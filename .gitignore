@@ -1,10 +1,27 @@
-.DS_Store
+# Python bytecode and test/type/lint caches
 __pycache__/
 *.py[cod]
 .pytest_cache/
-.venv/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage/
+
+# Local Python environments
+.venv*/
 venv/
+
+# Build and packaging artifacts
 build/
 dist/
 *.egg-info/
+
+# Generated reports and local execution ledgers
+outputs/*
+!outputs/.gitkeep
+.superpowers/
+
+# Local files
+.DS_Store
 .vscode/
+.ce/runtime/

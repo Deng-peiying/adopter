@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cross-embodiment.dev/schemas/hardware-package/v0.3",
+  "title": "Hardware Package manifest",
+  "type": "object",
+  "required": ["schema_version", "package", "embodiment_manifest", "backends"],
+  "properties": {
+    "schema_version": {"const": "hardware-package/v0.3"},
+    "package": {
+      "type": "object",
+      "required": ["name", "version", "vendor", "model", "type"],
+      "properties": {
+        "name": {"type": "string", "pattern": "^[a-z0-9_-]+/[a-z0-9_.-]+$"},
+        "version": {"type": "string", "minLength": 1},
+        "vendor": {"type": "string", "minLength": 1},
+        "model": {"type": "string", "minLength": 1},
+        "type": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": true
+    },
+    "embodiment_manifest": {"type": "string", "minLength": 1},
+    "assets": {"type": "object"},
+    "backends": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "type"],
+        "properties": {
+          "id": {"type": "string"},
+          "type": {"type": "string"},
+          "entrypoint": {"type": "string"},
+          "launch": {"type": "string"},
+          "requirements": {"type": "object"}
+        },
+        "additionalProperties": true
+      },
+      "minItems": 1
+    },
+    "defaults": {"type": "object"},
+    "validation": {"type": "object"}
+  },
+  "additionalProperties": true
+}

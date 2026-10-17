@@ -16,3 +16,19 @@ class CommandRejected(CrossEmbodimentError):
 
 class SafetyViolation(CrossEmbodimentError):
     """Raised when an action is unsafe."""
+
+
+class PackageError(CrossEmbodimentError):
+    """Raised when a hardware or policy package is invalid."""
+
+
+class AssetError(PackageError):
+    """Raised when an asset slot or variant cannot be resolved."""
+
+
+class DependencyError(PackageError):
+    """Raised when a backend or package dependency is unavailable."""
+
+
+class DriverCrash(CrossEmbodimentError):
+    """Raised when a managed driver exits unexpectedly."""

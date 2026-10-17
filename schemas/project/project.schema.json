@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cross-embodiment.dev/schemas/project/v0.1",
+  "title": "Cross-Embodiment User Project",
+  "type": "object",
+  "required": ["schema_version", "robots"],
+  "properties": {
+    "schema_version": {"const": "project/v0.1"},
+    "project": {"type": "object"},
+    "robots": {"type": "object", "minProperties": 1, "additionalProperties": {"type": "object", "required": ["package"], "properties": {"package": {"type": "string"}, "version": {"type": "string"}, "instance": {"type": "string"}, "backend": {"type": "string"}}}},
+    "policy": {"type": "object"},
+    "runtime": {"type": "object"},
+    "task": {"type": "object"}
+  },
+  "additionalProperties": true
+}

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import math
 import time
 from dataclasses import dataclass
 
-from .errors import CompatibilityError, LifecycleError, SafetyViolation
-from .types import Action, ActionSpec, Command, Observation
+from ..errors import CompatibilityError, LifecycleError, SafetyViolation
+from .mapping import ActionMapper
+from .safety import SafetyGuard
+from ..protocol.types import Action, ActionSpec, Command, Observation
 
 
 @dataclass
@@ -35,6 +36,8 @@ class Runtime:
         self.frequency_hz = control_frequency_hz or policy.action_spec().frequency_hz
         self.running = False
         self._validated = False
+        self.safety = SafetyGuard()
+        self.mapper = ActionMapper()
 
     def validate(self) -> CompatibilityReport:
         spec: ActionSpec = self.policy.action_spec()
@@ -81,7 +84,16 @@ class Runtime:
 
     def apply(self, action: Action):
         self._validate_action(action)
-        commands = self._map_action(action)
+        state = self.robot.state()
+        adapter = self.robot.adapter
+        self.safety.validate(
+            action,
+            state,
+            self.robot.manifest,
+            control_enabled=getattr(adapter, "control_enabled", True),
+            dry_run=getattr(adapter, "dry_run", False),
+        )
+        commands = self.mapper.map(action, self.robot.manifest)
         return [self.robot.command(command) for command in commands]
 
     def step(self):
@@ -113,26 +125,7 @@ class Runtime:
     def _validate_action(self, action: Action) -> None:
         if action.spec != self.policy.action_spec():
             raise SafetyViolation("ActionSpec does not match policy ActionSpec")
-        values = action.values
-        if isinstance(values, dict):
-            for value in values.values():
-                if isinstance(value, (list, tuple)) and not all(math.isfinite(float(x)) for x in value):
-                    raise SafetyViolation("Action contains non-finite values")
-                if isinstance(value, (float, int)) and not math.isfinite(float(value)):
-                    raise SafetyViolation("Action contains non-finite values")
+        return None
 
     def _map_action(self, action: Action) -> list[Command]:
-        if action.spec.type != "ee_delta":
-            raise SafetyViolation(f"Runtime v0.1 only executes ee_delta, got {action.spec.type}")
-        values = action.values
-        translation = tuple(float(x) for x in values["translation"])
-        bounds = self.robot.manifest.control.get("supported_modes", [])
-        mode = next((m for m in bounds if m.get("type") == "ee_delta" and m.get("target") == action.spec.target), {})
-        max_delta = mode.get("max_translation_delta")
-        if max_delta and any(abs(v) > limit for v, limit in zip(translation, max_delta)):
-            raise SafetyViolation(f"EE translation exceeds limit: {translation}")
-        commands = [Command(action.spec.target, "ee_delta", {"translation": translation, "rotation": tuple(values.get("rotation", (0, 0, 0)))}, action.spec.frame)]
-        if "gripper" in values:
-            gripper_target = values.get("gripper_target", "right_gripper")
-            commands.append(Command(gripper_target, "gripper_position", {"value": float(values["gripper"])}))
-        return commands
+        return self.mapper.map(action, self.robot.manifest)

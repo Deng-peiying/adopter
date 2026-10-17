@@ -1,8 +1,9 @@
 import unittest
+from pathlib import Path
 
 from cross_embodiment import Runtime, connect
 from cross_embodiment.errors import CompatibilityError, SafetyViolation
-from cross_embodiment.types import Action, ActionSpec
+from cross_embodiment.protocol.types import Action, ActionSpec
 
 
 class Policy:
@@ -24,7 +25,8 @@ class Policy:
 
 class V01Tests(unittest.TestCase):
     def setUp(self):
-        self.robot = connect("mock", "manifests/mock_ee.yaml")
+        manifest = Path(__file__).resolve().parents[2] / "examples/assets/mock_ee.yaml"
+        self.robot = connect("mock", manifest)
 
     def tearDown(self):
         self.robot.close()
