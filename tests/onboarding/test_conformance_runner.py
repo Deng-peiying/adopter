@@ -21,9 +21,8 @@ def test_generated_package_passes_offline_runtime_conformance(tmp_path: Path) ->
     report = ConformanceRunner().validate_generated_package(root)
     assert report.passed
     assert set(report.checks) >= {
-        "package_schema", "asset_digests", "backend_entrypoint", "state_decode",
-        "goal_encode", "vendor_failure", "timeout_uncertainty", "measured_arrival",
-        "resolved_package_identity",
+        "package_schema", "asset_digests", "package_owned_adapter_contract",
+        "mapping_reference", "provenance_isolation", "resolved_package_identity",
     }
     assert report.resolved_package_root == root.resolve()
     assert report.resolved_mapping_path == (root / "config/right_arm_ros2_mapping.yaml").resolve()
@@ -82,7 +81,7 @@ def test_mapping_resolution_cannot_select_another_package(tmp_path: Path) -> Non
     (root / "config/connection.yaml").write_text(yaml.safe_dump(connection))
     report = ConformanceRunner().validate_generated_package(root)
     assert not report.passed
-    assert any("mapping path" in failure.lower() for failure in report.failures)
+    assert any("mapping reference" in failure.lower() for failure in report.failures)
 
 
 def test_independent_comparison_reports_semantic_endpoint_difference(tmp_path: Path) -> None:

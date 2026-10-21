@@ -35,9 +35,13 @@ class Adapter:
         self.control_enabled = control_enabled
         self.dry_run = dry_run
         self.manage_process = manage_process
+        self.configure_calls = 0
         self.connect_calls = 0
         self.disconnect_calls = 0
         self.sent = []
+
+    def configure(self):
+        self.configure_calls += 1
 
     def connect(self):
         self.connect_calls += 1
@@ -159,9 +163,10 @@ def test_create_robot_is_disconnected_and_uses_read_only_runtime_options(tmp_pat
     assert robot.adapter.control_enabled is False
     assert robot.adapter.dry_run is False
     assert robot.adapter.manage_process is False
+    assert robot.adapter.configure_calls == 1
     assert robot.adapter.connect_calls == 0
     assert robot.adapter.disconnect_calls == 0
-    assert robot.adapter.connection["require_ros"] is True
+    assert "require_ros" not in robot.adapter.connection
     assert robot.adapter.connection["package_root"] == str(robot.runtime_info.package_root)
 
 
@@ -174,6 +179,7 @@ def test_default_store_uses_environment_without_connecting(
     robot = create_robot_from_instance(instance_id)
 
     assert robot.runtime_info.instance_id == instance_id
+    assert robot.adapter.configure_calls == 1
     assert robot.adapter.connect_calls == 0
 
 
@@ -202,6 +208,18 @@ def test_backend_without_mapping_has_none_mapping_provenance(tmp_path: Path) -> 
 
     assert resolved.info.mapping_path is None
     assert resolved.info.mapping_sha256 is None
+
+
+def test_package_process_preference_is_preserved_without_ros_assumptions(tmp_path: Path) -> None:
+    from dataclasses import replace
+
+    store, instance_id, _ = _install_and_activate(tmp_path, mapping_value=None)
+    resolved = resolve_installed_runtime(instance_id, store)
+    connection = {**resolved.connection, 'manage_process': True}
+    robot = replace(resolved, connection=connection).create_robot()
+    assert robot.adapter.connection['manage_process'] is True
+    assert 'require_ros' not in robot.adapter.connection
+    assert robot.adapter.connect_calls == 0
 
 
 def test_public_factory_exports_runtime_info_and_stays_disconnected(tmp_path: Path) -> None:

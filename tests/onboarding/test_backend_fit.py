@@ -29,21 +29,21 @@ def candidate(capability: str, transport: str, operation: str) -> CapabilityCand
 
 
 def test_ros2_subscription_and_action_fit_existing_backend() -> None:
-    descriptor = load_backend_descriptor(ROOT / "catalogs/backends/ros2_mapped_v0.1.yaml")
+    descriptor = load_backend_descriptor(ROOT / "catalogs/backends/ros2_v0.1.yaml")
     report = BackendFit.evaluate(coverage(
         candidate("joint_position_state", "ros2_subscription", "joint_state"),
         candidate("joint_position", "ros2_action", "joint_position"),
     ), (descriptor,))
     assert {(item.capability_id, item.backend_id) for item in report.fits} == {
-        ("joint_position_state", "ros2_mapped"),
-        ("joint_position", "ros2_mapped"),
+        ("joint_position_state", "ros2"),
+        ("joint_position", "ros2"),
     }
     assert report.plugin_requirements == ()
 
 
 @pytest.mark.parametrize("transport", ["ros2_service", "ros2_publisher", "python_call", "native_call", "raw_can"])
 def test_unsupported_mechanisms_emit_plugin_requirements(transport: str) -> None:
-    descriptor = load_backend_descriptor(ROOT / "catalogs/backends/ros2_mapped_v0.1.yaml")
+    descriptor = load_backend_descriptor(ROOT / "catalogs/backends/ros2_v0.1.yaml")
     item = candidate("joint_position", transport, "joint_position")
     report = BackendFit.evaluate(coverage(item), (descriptor,))
     requirement = report.plugin_requirements[0]
@@ -55,7 +55,7 @@ def test_unsupported_mechanisms_emit_plugin_requirements(transport: str) -> None
 
 
 def test_known_transport_with_unknown_operation_does_not_fit() -> None:
-    descriptor = load_backend_descriptor(ROOT / "catalogs/backends/ros2_mapped_v0.1.yaml")
+    descriptor = load_backend_descriptor(ROOT / "catalogs/backends/ros2_v0.1.yaml")
     report = BackendFit.evaluate(
         coverage(candidate("stop", "ros2_action", "stop")), (descriptor,)
     )
@@ -63,7 +63,7 @@ def test_known_transport_with_unknown_operation_does_not_fit() -> None:
 
 
 def test_backend_fit_accepts_complete_interface_mapping_with_unresolved_runtime_policy() -> None:
-    descriptor = load_backend_descriptor(ROOT / "catalogs/backends/ros2_mapped_v0.1.yaml")
+    descriptor = load_backend_descriptor(ROOT / "catalogs/backends/ros2_v0.1.yaml")
     item = candidate("joint_position", "ros2_action", "joint_position")
     partial = CapabilityCoverage((
         CapabilityAssessment(
@@ -80,6 +80,6 @@ def test_backend_fit_accepts_complete_interface_mapping_with_unresolved_runtime_
     report = BackendFit.evaluate(partial, (descriptor,))
 
     assert [(fit.capability_id, fit.backend_id) for fit in report.fits] == [
-        ("joint_position", "ros2_mapped"),
+        ("joint_position", "ros2"),
     ]
     assert report.plugin_requirements == ()

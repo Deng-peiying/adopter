@@ -1,0 +1,19 @@
+schema_version: backend-support/v0.1
+backend_id: ros2
+version: 0.1.0
+entrypoint: adapters.ros2.adapter:GeneratedAdapter
+transport_kinds:
+  - ros2_subscription
+  - ros2_action
+binding_operations:
+  - joint_state
+  - joint_position
+lifecycle_semantics:
+  ros2_subscription: sample
+  ros2_action: request_accept_execute_terminal_result_cancel
+excluded_mechanisms:
+  - ros2_service
+  - ros2_publisher
+  - python_call
+  - native_call
+  - raw_can

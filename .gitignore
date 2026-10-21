@@ -4,25 +4,57 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.hypothesis/
+.tox/
+.nox/
 .coverage
+.coverage.*
 coverage/
+htmlcov/
+coverage.xml
 
 # Local Python environments
 .venv*/
 venv/
+env/
+__pypackages__/
 
 # Build and packaging artifacts
 build/
 dist/
 *.egg-info/
+*.egg
+pip-wheel-metadata/
+*.cepack
 
 # Generated reports and local execution ledgers
 outputs/*
 !outputs/.gitkeep
 .superpowers/
+/tmp/
+/temp/
+/logs/
+/log/
+*.log
 
 # Local files
 .DS_Store
+Thumbs.db
 .vscode/
+.idea/
+*.swp
+*.swo
+*~
 .ce/runtime/
+.cross_embodiment/
+
+# Machine-local credentials; keep shareable environment templates
+.env
+.env.*
+!.env.example
+!.env.template
+.aws/
 .deepseek_credentials.py
+
+# Vendor libraries, model assets, lock files, source and docs stay versioned.
+# Do not add broad *.so, *.pdf, *.yaml or *.lock exclusions.

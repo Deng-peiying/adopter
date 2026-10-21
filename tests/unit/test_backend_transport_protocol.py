@@ -1,7 +1,7 @@
 import unittest
 from datetime import datetime, timezone
 
-from cross_embodiment.backend.protocol import (
+from cross_embodiment.transport.protocol import (
     BackendTransport,
     TransportEvent,
     TransportRequest,

@@ -14,7 +14,7 @@ from .package.lock import EmbodimentLock, load_lock
 from .package.project import ProjectSpec, load_project
 from .package.registry import LocalRegistry
 from .package.resolver import PackageResolver, Resolution
-from .driver.health import HealthReport
+from .adapter.health import HealthReport
 from .runtime.safety import SafetyGuard
 from .runtime.mapping import ActionMapper
 from .hardware.manifest import EmbodimentManifest, load_manifest

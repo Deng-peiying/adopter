@@ -1,8 +1,8 @@
 import unittest
 from types import SimpleNamespace
 
-from cross_embodiment.backend.protocol import TransportRequest
-from cross_embodiment.driver.ros2_transport import Ros2Transport
+from cross_embodiment.transport.protocol import TransportRequest
+from cross_embodiment.transport.ros2 import Ros2Transport
 
 
 class ImmediateFuture:

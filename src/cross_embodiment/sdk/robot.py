@@ -14,50 +14,18 @@ if TYPE_CHECKING:
     from ..runtime.installed import RuntimeInfo
 
 
-class Lifecycle:
-    def __init__(self, adapter):
-        self.adapter = adapter
-        self._configured = False
-        self._connected = False
-        self._enabled = False
-        self._stopped = False
-
-    def configure(self) -> None:
-        if not self._configured:
-            configure = getattr(self.adapter, "configure", None)
-            if configure is not None:
-                configure()
-            self._configured = True
-
-    def connect(self) -> None:
-        self.configure()
-        if not self._connected:
-            self.adapter.connect()
-            self._connected = True
-            self._stopped = False
-
-    def enable(self) -> None:
-        self.connect()
-        if not self._enabled:
-            self.adapter.enable()
-            self._enabled = True
-
-    def disable(self) -> None:
-        if self._enabled:
-            self.adapter.disable()
-            self._enabled = False
-
-    def stop(self) -> None:
-        if self._stopped:
-            return
-        self.disable()
-        if self._connected:
-            self.adapter.disconnect()
-            self._connected = False
-        self._stopped = True
+from .lifecycle import Lifecycle
 
 
 class Robot:
+    """A configured robot handle; hardware connection remains explicit.
+
+    Backend configuration errors propagate from construction. Adapter.configure
+    must only prepare configuration and environment descriptions; it must not
+    start a Driver, connect hardware, enable devices, or mutate process-wide
+    environment settings.
+    """
+
     def __init__(
         self,
         adapter: Any,
@@ -81,6 +49,7 @@ class Robot:
             else bool(dry_run)
         )
         self.lifecycle = Lifecycle(adapter)
+        self.lifecycle.configure()
 
     @classmethod
     def from_instance(
@@ -99,6 +68,7 @@ class Robot:
         )
 
     def connect(self) -> Robot:
+        """Connect through Lifecycle without implicitly enabling hardware."""
         self.lifecycle.connect()
         return self
 
@@ -166,7 +136,7 @@ class Robot:
             return [self.adapter.send_command(item) for item in mapped]
 
     def close(self) -> None:
-        self.lifecycle.stop()
+        self.lifecycle.close()
 
     def __enter__(self) -> Robot:
         return self.connect()

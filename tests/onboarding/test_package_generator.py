@@ -6,7 +6,6 @@ from pathlib import Path
 import pytest
 import yaml
 
-from cross_embodiment.mapping.engine import InterfaceMappingEngine
 from cross_embodiment.hardware.manifest import load_manifest
 from cross_embodiment.package.manifest import load_package_manifest
 from cross_embodiment.onboarding.backend_fit import BackendCapabilityFit, BackendFitReport
@@ -63,13 +62,13 @@ def inputs(conflict: bool = False):
     )
     coverage = CapabilityCoverage(assessments, candidates, ("unmapped-left-arm",))
     backend = BackendFitReport((
-        BackendCapabilityFit("joint_position_state", "ros2_mapped", "ros2_subscription", "joint_state"),
-        BackendCapabilityFit("joint_position", "ros2_mapped", "ros2_action", "joint_position"),
+        BackendCapabilityFit("joint_position_state", "ros2", "ros2_subscription", "joint_state"),
+        BackendCapabilityFit("joint_position", "ros2", "ros2_action", "joint_position"),
     ), ())
     identity = PackageIdentity(
         package_name="generated/weiyi-right-arm", version="0.1.0", vendor="Weiyi",
         model="dual_o6_right_arm", device_id="right_arm", embodiment_type="single_arm",
-        backend_id="ros2_mapped", backend_entrypoint="cross_embodiment.driver.ros2_mapped:MappedRos2Adapter",
+        backend_id="ros2", backend_entrypoint="adapters.ros2.adapter:GeneratedAdapter",
         ros_distro="humble", os="linux", arch="x86_64",
     )
     records = tuple(EvidenceRecord(
@@ -123,13 +122,13 @@ def test_generates_runtime_compatible_scoped_package(tmp_path: Path) -> None:
     generated = PackageGenerator.generate(coverage, evidence, backend, tmp_path / "out", identity)
     package = load_package_manifest(generated.package_yaml)
     manifest = load_manifest(generated.embodiment_yaml)
-    engine = InterfaceMappingEngine.from_connection({"mapping_path": generated.mapping_yaml}, manifest)
     mapping = yaml.safe_load(generated.mapping_yaml.read_text())
 
     assert package.name == "generated/weiyi-right-arm"
     assert [device["id"] for device in manifest.devices] == ["right_arm"]
     assert [joint["canonical_name"] for joint in manifest.devices[0]["joints"]] == list(JOINTS)
-    assert set(engine.device_ids()) == {"right_arm"}
+    assert package.backends[0].entrypoint == "adapters.ros2.adapter:GeneratedAdapter"
+    assert (generated.root / "adapters/ros2/adapter.py").is_file()
     state = mapping["bindings"]["right_arm_joint_state"]
     move = mapping["bindings"]["right_arm_joint_position"]
     assert state["semantic"]["unit"] == "radian"

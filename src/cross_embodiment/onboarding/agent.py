@@ -564,7 +564,7 @@ class OnboardingAgent:
         backend_fit_blocked = False
         if completed and all(item.status == "mapped" for item in ordered_decisions):
             descriptor = load_backend_descriptor(
-                workflow.platform_root / "catalogs/backends/ros2_mapped_v0.1.yaml"
+                workflow.platform_root / "catalogs/backends/ros2_v0.1.yaml"
             )
             fit = BackendFit.evaluate(coverage, (descriptor,))
             if not fit.plugin_requirements:
@@ -581,7 +581,7 @@ class OnboardingAgent:
             for item in coverage.assessments
         ):
             descriptor = load_backend_descriptor(
-                workflow.platform_root / "catalogs/backends/ros2_mapped_v0.1.yaml"
+                workflow.platform_root / "catalogs/backends/ros2_v0.1.yaml"
             )
             fit = BackendFit.evaluate(coverage, (descriptor,))
             if not fit.plugin_requirements:

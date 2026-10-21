@@ -17,7 +17,7 @@ from typing import Any
 import yaml
 
 from ..errors import CrossEmbodimentError, PackageError
-from ..driver.backend import load_backend_entrypoint
+from ..package.loader import load_backend_entrypoint
 from ..hardware.instance import RobotInstance
 from ..package.lock import load_lock
 from ..hardware.manifest import load_manifest

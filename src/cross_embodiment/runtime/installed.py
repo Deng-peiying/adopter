@@ -57,25 +57,21 @@ class ResolvedInstalledRuntime:
             from ..sdk.robot import connect as connect_fn
 
         runtime_connection = dict(self.connection)
-        runtime_connection.update({
-            "package_root": str(self.package_root),
-            "require_ros": True,
-            "manage_process": False,
-        })
+        runtime_connection["package_root"] = str(self.package_root)
         robot = connect_fn(
             _load_backend(self.backend, self.package_root),
             self.manifest,
             control_enabled=allow_motion,
             dry_run=False,
             connection=runtime_connection,
-            manage_process=False,
+            manage_process=bool(runtime_connection.get("manage_process", False)),
         )
         robot.runtime_info = replace(self.info, allow_motion=allow_motion)
         return robot
 
 
 def _load_backend(backend: BackendSpec, package_root: Path) -> Any:
-    from ..driver.backend import load_backend_entrypoint
+    from ..package.loader import load_backend_entrypoint
 
     return load_backend_entrypoint(backend, package_root)
 

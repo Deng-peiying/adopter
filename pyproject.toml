@@ -26,6 +26,7 @@ where = ["src"]
 [tool.setuptools.package-data]
 "cross_embodiment.onboarding" = [
   "schemas/*.json",
+  "templates/*.py",
   "platform/catalogs/backends/*.yaml",
   "platform/catalogs/capabilities/*.yaml",
   "platform/schemas/**/*.json",

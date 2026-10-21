@@ -250,7 +250,7 @@ class OnboardingWorkflow:
             raise SemanticConflict("capability coverage contains semantic conflicts")
         if any(item.status not in {"native", "derived"} for item in coverage.assessments):
             raise AssetInsufficiency("required capability evidence is incomplete")
-        descriptor = load_backend_descriptor(self.platform_root / "catalogs/backends/ros2_mapped_v0.1.yaml")
+        descriptor = load_backend_descriptor(self.platform_root / "catalogs/backends/ros2_v0.1.yaml")
         fit = BackendFit.evaluate(coverage, (descriptor,))
         _write_yaml(self.run_root / "backend-fit.yaml", _plain(fit))
         if fit.plugin_requirements:
@@ -265,7 +265,7 @@ class OnboardingWorkflow:
         if any(not item.mapping_complete for item in coverage.assessments):
             raise AssetInsufficiency("required interface mapping evidence is incomplete")
         descriptor = load_backend_descriptor(
-            self.platform_root / "catalogs/backends/ros2_mapped_v0.1.yaml"
+            self.platform_root / "catalogs/backends/ros2_v0.1.yaml"
         )
         fit = BackendFit.evaluate(coverage, (descriptor,))
         _write_yaml(self.run_root / "backend-fit.yaml", _plain(fit))
@@ -319,7 +319,7 @@ class OnboardingWorkflow:
         if output_root.exists() and any(output_root.iterdir()):
             raise ValueError("runtime package output already exists")
         backend = load_backend_descriptor(
-            self.platform_root / "catalogs/backends/ros2_mapped_v0.1.yaml"
+            self.platform_root / "catalogs/backends/ros2_v0.1.yaml"
         )
         generated = PackageGenerator.promote_candidate(
             candidate_root, output_root, policy, backend,

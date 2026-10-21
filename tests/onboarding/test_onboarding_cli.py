@@ -49,7 +49,7 @@ def test_installed_onboarding_defaults_to_packaged_platform_assets(
         workflow.platform_root / "catalogs/capabilities/v0.1.yaml"
     ).is_file()
     assert (
-        workflow.platform_root / "catalogs/backends/ros2_mapped_v0.1.yaml"
+        workflow.platform_root / "catalogs/backends/ros2_v0.1.yaml"
     ).is_file()
     assert (
         workflow.platform_root
@@ -85,7 +85,7 @@ def test_packaged_platform_assets_match_repository_contracts() -> None:
     repository = Path(__file__).resolve().parents[2]
     paths = [
         Path("catalogs/capabilities/v0.1.yaml"),
-        Path("catalogs/backends/ros2_mapped_v0.1.yaml"),
+        Path("catalogs/backends/ros2_v0.1.yaml"),
         *(
             path.relative_to(repository)
             for path in sorted((repository / "schemas").rglob("*.json"))
@@ -344,8 +344,8 @@ def test_l3_acceptance_cli_requires_exact_interactive_confirmation(monkeypatch, 
         package_tree_sha256 = "a" * 64
         mapping_path = tmp_path / "generated" / "config" / "mapping.yaml"
         mapping_sha256 = "b" * 64
-        backend_id = "ros2_mapped"
-        backend_entrypoint = "cross_embodiment.driver.ros2_mapped:MappedRos2Adapter"
+        backend_id = "ros2"
+        backend_entrypoint = "adapters.ros2.adapter:GeneratedAdapter"
         state_sample = {"status": "ready", "positions": target}
 
     class Result:
@@ -397,8 +397,8 @@ def test_l3_acceptance_cli_executes_through_activated_store_package(
         package_tree_sha256 = "a" * 64
         mapping_path = package_root / "config/mapping.yaml"
         mapping_sha256 = "b" * 64
-        backend_id = "ros2_mapped"
-        backend_entrypoint = "cross_embodiment.driver.ros2_mapped:MappedRos2Adapter"
+        backend_id = "ros2"
+        backend_entrypoint = "adapters.ros2.adapter:GeneratedAdapter"
         load_source = "installed_activation"
         instance_id = "lab/right-arm"
         installed_package_digest = "sha256:" + "c" * 64
@@ -457,8 +457,8 @@ def test_l3_acceptance_cli_rejects_not_ready_before_asking_for_authorization(
         package_tree_sha256 = "a" * 64
         mapping_path = tmp_path / "generated" / "config" / "mapping.yaml"
         mapping_sha256 = "b" * 64
-        backend_id = "ros2_mapped"
-        backend_entrypoint = "cross_embodiment.driver.ros2_mapped:MappedRos2Adapter"
+        backend_id = "ros2"
+        backend_entrypoint = "adapters.ros2.adapter:GeneratedAdapter"
         state_sample = {
             "status": "not_ready",
             "positions": target,

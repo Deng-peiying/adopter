@@ -17,7 +17,7 @@ def test_generated_clean_room_package_completes_offline_lifecycle(tmp_path: Path
     manifest = generated.package_yaml
     manifest.write_text(
         manifest.read_text(encoding="utf-8").replace(
-            "cross_embodiment.driver.ros2_mapped:MappedRos2Adapter",
+            "adapters.ros2.adapter:GeneratedAdapter",
             "must_not_be_imported.backend:Adapter",
         ),
         encoding="utf-8",
@@ -51,7 +51,7 @@ def test_generated_clean_room_package_completes_offline_lifecycle(tmp_path: Path
         """schema_version: robot-instance/v0.1
 instance: {id: lab/clean-room-right-arm}
 robot: {package: generated/weiyi-right-arm, version: 0.1.0}
-backend: {preferred: ros2_mapped}
+backend: {preferred: ros2}
 connection: {domain_id: 7}
 """,
         encoding="utf-8",

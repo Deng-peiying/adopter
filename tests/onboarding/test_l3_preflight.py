@@ -90,7 +90,7 @@ def _installed_runtime(tmp_path: Path) -> tuple[Path, str, Path, str]:
         f"""schema_version: robot-instance/v0.1
 instance: {{id: {instance_id}}}
 robot: {{package: {package.name}, version: {package.version}}}
-backend: {{preferred: ros2_mapped}}
+backend: {{preferred: ros2}}
 connection: {{domain_id: 7}}
 """,
         encoding="utf-8",
@@ -116,7 +116,7 @@ def test_preflight_loads_only_explicit_generated_package_and_reads_state(tmp_pat
     assert record.mapping_path == generated.mapping_yaml.resolve()
     assert len(record.package_tree_sha256) == 64
     assert len(record.mapping_sha256) == 64
-    assert record.backend_entrypoint == "cross_embodiment.driver.ros2_mapped:MappedRos2Adapter"
+    assert record.backend_entrypoint == "adapters.ros2.adapter:GeneratedAdapter"
     assert record.state_sample["status"] == "ready"
     assert record.state_sample["positions"]["arm.right.joint.6"] == 6.0
     assert record.commands == ()

@@ -10,7 +10,7 @@ from typing import Any, Callable
 
 import yaml
 
-from ..driver.backend import load_backend_entrypoint
+from ..package.loader import load_backend_entrypoint
 from ..hardware.manifest import load_manifest
 from ..package.manifest import PlatformInfo, load_package_manifest
 from ..runtime.installed import ResolvedInstalledRuntime, resolve_installed_runtime

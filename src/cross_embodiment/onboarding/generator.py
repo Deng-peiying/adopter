@@ -4,6 +4,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
+import shutil
 from typing import Any
 
 import yaml
@@ -56,6 +57,19 @@ def _write_yaml(path: Path, data: dict[str, Any]) -> None:
 
 def _digest(path: Path) -> str:
     return sha256(path.read_bytes()).hexdigest()
+
+
+_ADAPTER_ENTRYPOINT = "adapters.ros2.adapter:GeneratedAdapter"
+
+
+def _write_adapter_scaffold(root: Path) -> Path:
+    source = Path(__file__).parent / "templates" / "ros2_adapter.py"
+    target = root / "adapters" / "ros2" / "adapter.py"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    (root / "adapters" / "__init__.py").write_text("", encoding="utf-8")
+    target.parent.joinpath("__init__.py").write_text("", encoding="utf-8")
+    shutil.copyfile(source, target)
+    return target
 
 
 def package_tree_digest(root: Path) -> str:
@@ -465,6 +479,7 @@ class PackageGenerator:
             "manage_process": False,
         })
 
+        adapter_path = _write_adapter_scaffold(root)
         candidate_provenance = yaml.safe_load(
             (candidate_root / "generation-provenance.yaml").read_text(
                 encoding="utf-8"
@@ -489,7 +504,7 @@ class PackageGenerator:
             "backend": {
                 "id": backend.backend_id,
                 "version": backend.version,
-                "entrypoint": backend.entrypoint,
+                "entrypoint": _ADAPTER_ENTRYPOINT,
             },
             "capabilities": {
                 "joint_position_state": {
@@ -517,6 +532,7 @@ class PackageGenerator:
             },
             "embodiment_manifest": "embodiment.yaml",
             "assets": {
+                "adapter_code": [{"format": "python", "path": "adapters/ros2/adapter.py", "source": True, "digest": f"sha256:{_digest(adapter_path)}"}],
                 "interface_mapping": [{
                     "format": "yaml",
                     "path": f"config/{mapping_path.name}",
@@ -539,7 +555,7 @@ class PackageGenerator:
             "backends": [{
                 "id": backend.backend_id,
                 "type": "python",
-                "entrypoint": backend.entrypoint,
+                "entrypoint": _ADAPTER_ENTRYPOINT,
                 "requirements": dict(candidate_backend.requirements),
             }],
             "defaults": {
@@ -664,6 +680,7 @@ class PackageGenerator:
             {"mapping_path": f"config/{mapping_name}", "manage_process": False},
         )
 
+        adapter_path = _write_adapter_scaffold(root)
         used_ids = tuple(sorted(set(candidates["joint_position_state"].evidence_ids + candidates["joint_position"].evidence_ids)))
         provenance = {
             "schema_version": "generation-provenance/v0.1",
@@ -689,12 +706,13 @@ class PackageGenerator:
             "package": {"name": package_identity.package_name, "version": package_identity.version, "vendor": package_identity.vendor, "model": package_identity.model, "type": "robot"},
             "embodiment_manifest": "embodiment.yaml",
             "assets": {
+                "adapter_code": [{"format": "python", "path": "adapters/ros2/adapter.py", "source": True, "digest": f"sha256:{_digest(adapter_path)}"}],
                 "interface_mapping": [{"format": "yaml", "path": f"config/{mapping_name}", "source": True, "digest": f"sha256:{_digest(mapping_path)}"}],
                 "generation_provenance": [{"format": "yaml", "path": "generation-provenance.yaml", "source": True, "digest": f"sha256:{_digest(provenance_path)}"}],
             },
-            "backends": [{"id": package_identity.backend_id, "type": "python", "entrypoint": package_identity.backend_entrypoint, "platforms": [{"os": package_identity.os, "arch": package_identity.arch}], "requirements": {"ros_distro": package_identity.ros_distro}}],
+            "backends": [{"id": package_identity.backend_id, "type": "python", "entrypoint": _ADAPTER_ENTRYPOINT, "platforms": [{"os": package_identity.os, "arch": package_identity.arch}], "requirements": {"ros_distro": package_identity.ros_distro}}],
             "defaults": {"backend": package_identity.backend_id, "config": "config/connection.yaml"},
-            "validation": {"scope": [package_identity.device_id], "capabilities": sorted(required)},
+            "validation": {"scope": [package_identity.device_id], "capabilities": sorted(required), "runtime_package_generated": True, "runtime_preflight_passed": False, "live_execution_ready": False, "adapter_implementation_required": True},
         }
         _write_yaml(package_path, package)
         return GeneratedPackage(root, package_path, embodiment_path, mapping_path, provenance_path)

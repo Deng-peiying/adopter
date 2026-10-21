@@ -3,7 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 
 from ..errors import CommandRejected, LifecycleError
-from ..driver.health import HealthReport
+from ..adapter.health import HealthReport
 from ..hardware.manifest import EmbodimentManifest
 from ..protocol.types import Command, CommandResult, JointState, Pose, RobotState, SafetyState
 

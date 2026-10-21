@@ -130,7 +130,10 @@ with Robot.from_instance(
     print(robot.get_joint_state("right_arm"))
 ```
 
-完整部署边界见 [Runtime 部署指南](docs/runtime-deployment.md)。
+`Robot.from_instance()` 不会启动厂商 Driver，构造时只完成配置。
+`robot.connect()` 不会使能机器人，具体连接方式由硬件包 Adapter 实现。
+运动需要显式 `allow_motion=True`；可先用 `target = dict(state.positions)` 从完整实测
+状态准备具名目标，再按硬件包能力和限制修改。`robot.close()` 释放连接，不隐式下电。
 
 ## Onboard a New Robot
 
@@ -160,12 +163,9 @@ Inventory → Evidence → Capability Match → Backend Fit
           → Operator Runtime Policy → Runtime Package → .cepack
 ```
 
-Weiyi 已验证“复用 `ros2_mapped` Backend 并自动生成 Mapping”。Python SDK、
-C/C++ Library 和全新 Backend 插件的自动代码生成与真机运行尚未验证。当现有
-Backend 无法表达厂商通信方式时，系统必须输出明确缺口，不得伪造支持。
-
-详细步骤见 [Hardware Onboarding 工作流](docs/onboarding/workflow.md) 和
-[新厂商接入手册](docs/onboarding/new-vendor-runbook.md)。
+Onboarding 生成的运行包包含包内 Adapter 骨架与映射证据文件。骨架不会解释厂商 YAML，
+也不能连接或控制硬件；必须由硬件包作者实现并验证具体 Adapter。Python/C++
+驱动和跨厂商代码生成仍未验证。
 
 ## Hardware Package 命令
 
@@ -183,38 +183,37 @@ ce package uninstall vendor/model@1.0.0 --json
 Package 命令只操作文件、摘要、Store 和实例绑定，不自动启动 Driver、使能设备
 或发送动作。`CROSS_EMBODIMENT_STORE` 可覆盖默认 Store。
 
-## 已验证范围
+## 当前验证状态
 
-| 能力 | 状态 |
+| 检查 | 状态 |
 | --- | --- |
-| wheel 独立安装 | 已验证 |
-| `.cepack` build/install/activate/use/uninstall | 已验证 |
-| `Robot.from_instance()` 真实七关节状态读取 | 已验证 |
-| Weiyi `joint_position_state` / `joint_position` | 已真机验证 |
-| ROS2 资产到 Mapping/Package 自动生成 | 已真机验证 |
-| Python/C++ 自动 Backend 生成 | 尚未验证 |
-| Driver Lifecycle `status/start/stop/health` | 尚未实现 |
+| 新源码语法编译 | 已通过 `compileall`，只检查语法 |
+| 旧 Adapter 与 YAML Mapping Engine 删除后的 SDK / Onboarding 测试 | 尚未运行 |
+| WY 新 Adapter 和硬件包端到端检查 | 尚未在本次重构后运行 |
+| Driver、ROS2 节点及真实机器人控制 | 本次未运行 |
+
+旧版本的离线与现场验证记录不代表当前 breaking refactor 已通过验证。
 
 ## 文档
 
-- [Unified Robot API](docs/architecture/unified-robot-api-v1.md)
-- [Runtime 部署指南](docs/runtime-deployment.md)
-- [Hardware Package 生命周期](docs/package-lifecycle.md)
-- [Hardware Onboarding 工作流](docs/onboarding/workflow.md)
-- [Evidence Policy](docs/onboarding/evidence-policy.md)
-- [SDK 开发与测试](docs/development.md)
 - [v0.3 架构设计](docs/architecture/cross-embodiment-sdk-design-v0.3.md)
+- [v0.4 正式架构设计](docs/architecture/cross-embodiment-sdk-design-v0.4.md)
+- [v0.4 Implementation](docs/implementation/cross-embodiment-sdk-implementation-v0.4.md)
+- [v0.4 历史设计草稿](docs/architecture/v0.4-draft.md)
+
+`docs/implementation/` 保存版本实施说明与验收清单；旧指南和执行记录可从 Git 历史查阅。
 
 ## 源码目录
 
 ```text
 src/cross_embodiment/
-├── sdk/          # Robot API
+├── sdk/          # Robot API 与 Lifecycle
+├── adapter/      # Adapter 契约、包资源上下文与健康报告
+├── transport/    # 通用通信协议与 ROS2 Action/Service
+├── driver_host/  # 子环境、进程管理与 Transport 子进程
 ├── protocol/     # Action、JointState、CommandResult
-├── mapping/      # 映射验证、编码和解码
-├── backend/      # BackendTransport 契约
-├── driver/       # ros2_mapped 和 Ros2Transport
-├── package/      # .cepack 和 Package Store
-├── onboarding/   # Scanner、Matcher、Agent、Generator、Conformance
+├── runtime/      # 安全约束、动作转换与实例装配
+├── package/      # .cepack、Package Store 和包内 Adapter 加载
+├── onboarding/   # 证据评估、包骨架生成与契约检查
 └── cli/          # ce CLI
 ```

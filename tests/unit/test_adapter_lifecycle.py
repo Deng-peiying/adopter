@@ -1,10 +1,9 @@
 import unittest
 
-from cross_embodiment.adapter.base import RobotAdapter
+from cross_embodiment.adapter.protocol import RobotAdapter
 from cross_embodiment.adapter.mock import MockAdapter
-from cross_embodiment.driver.ros2_mapped import MappedRos2Adapter
 from cross_embodiment.hardware.manifest import EmbodimentManifest
-from cross_embodiment.sdk.robot import Lifecycle
+from cross_embodiment.sdk.robot import Lifecycle, Robot
 
 
 class Adapter:
@@ -28,6 +27,53 @@ class Adapter:
 
 
 class AdapterLifecycleTests(unittest.TestCase):
+    def test_robot_initialization_configures_without_connecting(self):
+        adapter = Adapter()
+        manifest = EmbodimentManifest(
+            schema_version="embodiment/v0.2", embodiment={}
+        )
+
+        robot = Robot(adapter, manifest)
+
+        self.assertEqual(adapter.calls, ["configure"])
+        robot.close()
+        self.assertEqual(adapter.calls, ["configure"])
+
+    def test_robot_connect_does_not_repeat_initial_configuration_or_enable(self):
+        adapter = Adapter()
+        manifest = EmbodimentManifest(
+            schema_version="embodiment/v0.2", embodiment={}
+        )
+        robot = Robot(adapter, manifest)
+        self.assertEqual(adapter.calls, ["configure"])
+
+        self.assertIs(robot.connect(), robot)
+        robot.connect()
+        self.assertEqual(adapter.calls, ["configure", "connect"])
+
+        robot.close()
+        robot.connect()
+        robot.close()
+        self.assertEqual(
+            adapter.calls,
+            ["configure", "connect", "disconnect", "connect", "disconnect"],
+        )
+
+    def test_configuration_error_aborts_robot_construction(self):
+        class InvalidAdapter(Adapter):
+            def configure(self):
+                super().configure()
+                raise ValueError("Invalid backend configuration")
+
+        adapter = InvalidAdapter()
+        manifest = EmbodimentManifest(
+            schema_version="embodiment/v0.2", embodiment={}
+        )
+
+        with self.assertRaisesRegex(ValueError, "Invalid backend configuration"):
+            Robot(adapter, manifest)
+        self.assertEqual(adapter.calls, ["configure"])
+
     def test_robot_adapter_protocol_declares_robot_runtime_surface(self):
         for name in (
             "capabilities",
@@ -37,25 +83,6 @@ class AdapterLifecycleTests(unittest.TestCase):
             "send_command",
         ):
             self.assertTrue(hasattr(RobotAdapter, name), name)
-
-    def test_mapped_adapter_implements_declared_protocol_methods(self):
-        required = (
-            "load_manifest",
-            "configure",
-            "connect",
-            "disconnect",
-            "enable",
-            "disable",
-            "capabilities",
-            "supports_action",
-            "get_joint_state",
-            "get_state",
-            "send_command",
-            "health",
-        )
-        for name in required:
-            self.assertTrue(hasattr(MappedRos2Adapter, name), name)
-            self.assertTrue(hasattr(MockAdapter, name), name)
 
     def test_mock_joint_state_is_derived_from_manifest_devices(self):
         manifest = EmbodimentManifest(
