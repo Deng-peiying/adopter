@@ -20,13 +20,17 @@ from .runtime.mapping import ActionMapper
 from .hardware.manifest import EmbodimentManifest, load_manifest
 from .runtime.runtime import Runtime
 from .runtime.installed import RuntimeInfo
-from .sdk.robot import Command, Robot, connect
-from .protocol.types import Action, ActionSpec, CartesianTarget, CommandResult, JointTarget, Observation, Pose, RobotState
+from .sdk.factory import connect
+from .sdk.robot_base import RobotBase
+from .sdk.manipulator import ManipulatorRobot
+from .sdk.quadruped import QuadrupedRobot
+from .protocol.types import Action, ActionSpec, BaseState, CartesianTarget, Command, CommandResult, JointTarget, Observation, Pose, RobotState
 
 __all__ = [
     "Command",
     "Action",
     "ActionSpec",
+    "BaseState",
     "CartesianTarget",
     "CommandResult",
     "JointTarget",
@@ -39,7 +43,9 @@ __all__ = [
     "DependencyError",
     "EmbodimentLock",
     "EmbodimentManifest",
-    "Robot",
+    "RobotBase",
+    "ManipulatorRobot",
+    "QuadrupedRobot",
     "Runtime",
     "RuntimeInfo",
     "HardwarePackage",

@@ -24,7 +24,7 @@ def _package(root: Path, *, version: str = "1.2.3", name: str = "example/arm") -
     mapping.write_text("schema_version: mapping/v0.1\n", encoding="utf-8")
     digest = hashlib.sha256(mapping.read_bytes()).hexdigest()
     (root / "embodiment.yaml").write_text(
-        "schema_version: embodiment/v0.2\nembodiment: {type: single_arm, dof: 1}\ndevices: []\n",
+        "schema_version: embodiment/v0.2\nembodiment: {type: single_arm, profile: manipulator, dof: 1}\ndevices: []\n",
         encoding="utf-8",
     )
     (root / "package.yaml").write_text(

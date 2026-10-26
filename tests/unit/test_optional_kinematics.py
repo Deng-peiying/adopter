@@ -21,7 +21,7 @@ class OptionalKinematicsTests(unittest.TestCase):
                 sys.executable,
                 "-c",
                 "import sys, cross_embodiment; "
-                "print(hasattr(cross_embodiment, 'Robot')); "
+                "print(hasattr(cross_embodiment, 'RobotBase')); "
                 "print('PyKDL' in sys.modules); "
                 "print('urdf_parser_py' in sys.modules)",
             ],

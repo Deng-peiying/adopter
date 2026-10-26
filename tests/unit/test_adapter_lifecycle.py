@@ -3,7 +3,8 @@ import unittest
 from cross_embodiment.adapter.protocol import RobotAdapter
 from cross_embodiment.adapter.mock import MockAdapter
 from cross_embodiment.hardware.manifest import EmbodimentManifest
-from cross_embodiment.sdk.robot import Lifecycle, Robot
+from cross_embodiment.sdk.lifecycle import Lifecycle
+from cross_embodiment.sdk.manipulator import ManipulatorRobot
 
 
 class Adapter:
@@ -33,7 +34,7 @@ class AdapterLifecycleTests(unittest.TestCase):
             schema_version="embodiment/v0.2", embodiment={}
         )
 
-        robot = Robot(adapter, manifest)
+        robot = ManipulatorRobot(adapter, manifest)
 
         self.assertEqual(adapter.calls, ["configure"])
         robot.close()
@@ -44,7 +45,7 @@ class AdapterLifecycleTests(unittest.TestCase):
         manifest = EmbodimentManifest(
             schema_version="embodiment/v0.2", embodiment={}
         )
-        robot = Robot(adapter, manifest)
+        robot = ManipulatorRobot(adapter, manifest)
         self.assertEqual(adapter.calls, ["configure"])
 
         self.assertIs(robot.connect(), robot)
@@ -71,7 +72,7 @@ class AdapterLifecycleTests(unittest.TestCase):
         )
 
         with self.assertRaisesRegex(ValueError, "Invalid backend configuration"):
-            Robot(adapter, manifest)
+            ManipulatorRobot(adapter, manifest)
         self.assertEqual(adapter.calls, ["configure"])
 
     def test_robot_adapter_protocol_declares_robot_runtime_surface(self):

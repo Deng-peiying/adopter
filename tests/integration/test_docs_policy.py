@@ -14,11 +14,11 @@ class DocsPolicyTests(unittest.TestCase):
     def test_readme_documents_installed_instance_python_runtime(self):
         text = Path("README.md").read_text(encoding="utf-8")
         for required in (
-            "Robot.from_instance(",
+            "RobotBase.from_instance(",
             "allow_motion=False",
             "allow_motion=True",
             "target = dict(state.positions)",
-            "Robot.from_instance()` 不会启动厂商 Driver",
+            "RobotBase.from_instance()` 不会启动厂商 Driver",
             "robot.connect()` 不会使能机器人",
         ):
             with self.subTest(required=required):

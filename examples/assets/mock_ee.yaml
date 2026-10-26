@@ -2,6 +2,7 @@ schema_version: embodiment/v0.1
 embodiment:
   id: mock.ee_robot
   name: Mock EE Robot
+  profile: manipulator
 frames:
   default_action_frame: base
 devices:

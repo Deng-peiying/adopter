@@ -23,6 +23,23 @@ class SafetyState:
     fault: bool = False
 
 
+@dataclass(frozen=True)
+class BaseState:
+    """Measured planar and body state with explicit physical units."""
+
+    device_id: str
+    linear_x_mps: float | None = None
+    linear_y_mps: float | None = None
+    angular_z_radps: float | None = None
+    roll_rad: float | None = None
+    pitch_rad: float | None = None
+    yaw_rad: float | None = None
+    height_m: float | None = None
+    source_timestamp: datetime | None = None
+    received_at: datetime = field(default_factory=now_utc)
+    status: str = "unknown"
+
+
 @dataclass
 class RobotState:
     timestamp: datetime = field(default_factory=now_utc)
@@ -34,6 +51,7 @@ class RobotState:
     grippers: dict[str, float] | None = None
     safety: SafetyState = field(default_factory=SafetyState)
     device_status: dict[str, str] = field(default_factory=dict)
+    base_state: BaseState | None = None
 
 
 @dataclass(frozen=True)

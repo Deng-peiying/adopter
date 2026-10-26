@@ -1,5 +1,6 @@
 schema_version: embodiment/v0.2
 embodiment:
+  profile: manipulator
   type: test_arm
   dof: 2
 devices:

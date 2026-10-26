@@ -14,7 +14,7 @@ from ..package.lifecycle import PackageLifecycle
 from ..package.manifest import BackendSpec, load_package_manifest
 
 if TYPE_CHECKING:
-    from ..sdk.robot import Robot
+    from ..sdk.robot_base import RobotBase
 
 
 @dataclass(frozen=True)
@@ -51,10 +51,11 @@ class ResolvedInstalledRuntime:
         self,
         *,
         allow_motion: bool = False,
-        connect_fn: Callable[..., Robot] | None = None,
-    ) -> Robot:
+        connect_fn: Callable[..., RobotBase] | None = None,
+        robot_class: type[RobotBase] | None = None,
+    ) -> RobotBase:
         if connect_fn is None:
-            from ..sdk.robot import connect as connect_fn
+            from ..sdk.factory import connect as connect_fn
 
         runtime_connection = dict(self.connection)
         runtime_connection["package_root"] = str(self.package_root)
@@ -65,6 +66,7 @@ class ResolvedInstalledRuntime:
             dry_run=False,
             connection=runtime_connection,
             manage_process=bool(runtime_connection.get("manage_process", False)),
+            robot_class=robot_class,
         )
         robot.runtime_info = replace(self.info, allow_motion=allow_motion)
         return robot
@@ -155,11 +157,13 @@ def create_robot_from_instance(
     *,
     store: str | Path | None = None,
     allow_motion: bool = False,
-    connect_fn: Callable[..., Robot] | None = None,
-) -> Robot:
+    connect_fn: Callable[..., RobotBase] | None = None,
+    robot_class: type[RobotBase] | None = None,
+) -> RobotBase:
     return resolve_installed_runtime(instance_id, store).create_robot(
         allow_motion=allow_motion,
         connect_fn=connect_fn,
+        robot_class=robot_class,
     )
 
 

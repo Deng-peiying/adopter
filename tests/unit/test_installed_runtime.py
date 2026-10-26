@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from cross_embodiment import Robot, RuntimeInfo
+from cross_embodiment import RobotBase, RuntimeInfo, ManipulatorRobot
 from cross_embodiment.errors import PackageError, SafetyViolation
 from cross_embodiment.package.artifact import build_package_artifact
 from cross_embodiment.package.lifecycle import PackageLifecycle
@@ -64,7 +64,7 @@ class Adapter:
     )
     (root / "embodiment.yaml").write_text(
         """schema_version: embodiment/v0.2
-embodiment: {type: arm, dof: 2}
+embodiment: {type: arm, profile: manipulator, dof: 2}
 devices:
   - id: arm
     type: arm
@@ -225,7 +225,8 @@ def test_package_process_preference_is_preserved_without_ros_assumptions(tmp_pat
 def test_public_factory_exports_runtime_info_and_stays_disconnected(tmp_path: Path) -> None:
     store, instance_id, _ = _install_and_activate(tmp_path)
 
-    robot = Robot.from_instance(instance_id, store=store)
+    robot = RobotBase.from_instance(instance_id, store=store)
+    assert isinstance(robot, ManipulatorRobot)
 
     assert isinstance(robot.runtime_info, RuntimeInfo)
     assert robot.runtime_info.instance_id == instance_id
@@ -235,7 +236,7 @@ def test_public_factory_exports_runtime_info_and_stays_disconnected(tmp_path: Pa
 def test_public_factory_enforces_motion_permission_for_move_and_command(tmp_path: Path) -> None:
     store, instance_id, _ = _install_and_activate(tmp_path)
     target = {"arm.joint.0": 0.1, "arm.joint.1": -0.1}
-    read_only = Robot.from_instance(instance_id, store=store)
+    read_only = RobotBase.from_instance(instance_id, store=store)
     # The SDK permission is authoritative even if a Backend exposes or mutates
     # its own similarly named flag.
     read_only.adapter.control_enabled = True
@@ -248,7 +249,7 @@ def test_public_factory_enforces_motion_permission_for_move_and_command(tmp_path
         read_only.command(Action(ActionSpec("joint_position", "arm", dimension=2), {"positions": target}))
     assert read_only.adapter.sent == []
 
-    writable = Robot.from_instance(instance_id, store=store, allow_motion=True)
+    writable = ManipulatorRobot.from_instance(instance_id, store=store, allow_motion=True)
     result = writable.move_joints("arm", target)
     assert result.status == "succeeded"
     assert writable.adapter.sent[0].payload["positions"] == target

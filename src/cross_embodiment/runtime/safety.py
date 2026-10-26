@@ -37,7 +37,7 @@ class SafetyGuard:
             age_ms = (datetime.now(timezone.utc) - state.timestamp).total_seconds() * 1000
             if age_ms > float(max_age_ms):
                 raise SafetyViolation(f"Robot state is stale ({age_ms:.1f}ms)")
-        configured_bounds = mode.get("bounds", mode.get("limits"))
+        configured_bounds = action.spec.bounds or mode.get("bounds", mode.get("limits"))
         device = manifest.device(action.spec.target)
         devices = [device] if device else manifest.devices
         if configured_bounds is None and devices:
@@ -65,6 +65,8 @@ class SafetyGuard:
                 if key in values:
                     data = values[key]
                     result.extend(float(value) for value in (data.values() if isinstance(data, dict) else data))
+            if all(key in values for key in ("x", "y", "yaw")):
+                result.extend(float(values[key]) for key in ("x", "y", "yaw"))
             if "pose" in values and isinstance(values["pose"], dict):
                 pose = values["pose"]
                 result.extend(float(value) for value in pose.get("position", ()))
@@ -92,12 +94,23 @@ class SafetyGuard:
             return
         if isinstance(configured, dict):
             positions = action_values.get("positions", {}) if isinstance(action_values, dict) else {}
-            if isinstance(positions, dict):
+            if isinstance(positions, dict) and positions:
                 for name, value in positions.items():
                     pair = configured.get(name)
                     if pair is not None and not float(pair[0]) <= float(value) <= float(pair[1]):
                         raise SafetyViolation(f"Joint {name}={value} outside [{pair[0]}, {pair[1]}]")
                 return
+            if isinstance(action_values, dict):
+                matched = False
+                for name, value in action_values.items():
+                    pair = configured.get(name)
+                    if pair is None or not isinstance(value, (int, float)):
+                        continue
+                    matched = True
+                    if not float(pair[0]) <= float(value) <= float(pair[1]):
+                        raise SafetyViolation(f"Action {name}={value} outside [{pair[0]}, {pair[1]}]")
+                if matched:
+                    return
             configured = list(configured.values())
         for index, pair in enumerate(configured):
             if index >= len(values) or pair is None:

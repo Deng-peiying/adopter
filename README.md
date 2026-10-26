@@ -2,7 +2,7 @@
 
 Cross-Embodiment SDK 是统一机器人接入与运行平台：
 
-- **Unified Robot Runtime**：通过 `Robot` API 读取状态和执行标准能力。
+- **Unified Robot Runtime**：通过 `RobotBase` 与 `ManipulatorRobot` / `QuadrupedRobot` 类别 API 读取状态和执行标准能力。
 - **Hardware Onboarding Agent**：从厂商原始资产提取证据，生成 Mapping 和 Hardware Package。
 - **Hardware Package Lifecycle**：构建、安装、检查、激活、使用和卸载 `.cepack`。
 
@@ -105,9 +105,9 @@ VENV="${XDG_DATA_HOME:-$HOME/.local/share}/cross-embodiment/weiyi-dual-o6-right-
 `allow_motion=False` 只读取状态，不发送运动命令。它的核心代码如下：
 
 ```python
-from cross_embodiment import Robot
+from cross_embodiment import ManipulatorRobot
 
-with Robot.from_instance(
+with ManipulatorRobot.from_instance(
     "lab/weiyi-right-arm-01",
     allow_motion=False,
 ) as robot:
@@ -122,7 +122,7 @@ with Robot.from_instance(
 需要使用自定义 Store 时：
 
 ```python
-with Robot.from_instance(
+with ManipulatorRobot.from_instance(
     "lab/robot-01",
     store="/path/to/store",
     allow_motion=False,
@@ -130,7 +130,7 @@ with Robot.from_instance(
     print(robot.get_joint_state("right_arm"))
 ```
 
-`Robot.from_instance()` 不会启动厂商 Driver，构造时只完成配置。
+`RobotBase.from_instance()` 不会启动厂商 Driver，构造时只完成配置，并依据 Manifest 的类别返回 `ManipulatorRobot` 或 `QuadrupedRobot`。应用也可以直接用类别工厂校验目标实例。
 `robot.connect()` 不会使能机器人，具体连接方式由硬件包 Adapter 实现。
 运动需要显式 `allow_motion=True`；可先用 `target = dict(state.positions)` 从完整实测
 状态准备具名目标，再按硬件包能力和限制修改。`robot.close()` 释放连接，不隐式下电。
@@ -200,6 +200,7 @@ Package 命令只操作文件、摘要、Store 和实例绑定，不自动启动
 - [v0.4 正式架构设计](docs/architecture/cross-embodiment-sdk-design-v0.4.md)
 - [v0.4 Implementation](docs/implementation/cross-embodiment-sdk-implementation-v0.4.md)
 - [v0.4 历史设计草稿](docs/architecture/v0.4-draft.md)
+- [v0.5 适配方案草稿](docs/architecture/v0.5-draft.md)
 
 `docs/implementation/` 保存版本实施说明与验收清单；旧指南和执行记录可从 Git 历史查阅。
 
@@ -207,7 +208,7 @@ Package 命令只操作文件、摘要、Store 和实例绑定，不自动启动
 
 ```text
 src/cross_embodiment/
-├── sdk/          # Robot API 与 Lifecycle
+├── sdk/          # RobotBase、ManipulatorRobot、QuadrupedRobot 与 Lifecycle
 ├── adapter/      # Adapter 契约、包资源上下文与健康报告
 ├── transport/    # 通用通信协议与 ROS2 Action/Service
 ├── driver_host/  # 子环境、进程管理与 Transport 子进程

@@ -3,7 +3,8 @@ from datetime import datetime, timezone
 
 from cross_embodiment.hardware.manifest import EmbodimentManifest
 from cross_embodiment.protocol.types import Action, ActionSpec, Command, CommandResult, RobotState, SafetyState
-from cross_embodiment.sdk.robot import Robot
+from cross_embodiment.errors import SafetyViolation
+from cross_embodiment.sdk.manipulator import ManipulatorRobot
 
 
 class JointBackend:
@@ -13,6 +14,9 @@ class JointBackend:
         self.dry_run = False
         self.connect_calls = 0
         self.disconnect_calls = 0
+
+    def configure(self):
+        return None
 
     def connect(self):
         self.connect_calls += 1
@@ -56,7 +60,7 @@ class RobotJointApiTests(unittest.TestCase):
             control={"supported_modes": [{"type": "joint_position", "target": "right_arm", "dimension": 7}]},
             safety={"requires_enable": True},
         )
-        self.robot = Robot(self.backend, self.manifest)
+        self.robot = ManipulatorRobot(self.backend, self.manifest)
 
     def test_public_state_and_move_use_canonical_names(self):
         state = self.robot.get_joint_state("right_arm")
@@ -84,7 +88,7 @@ class RobotJointApiTests(unittest.TestCase):
         action = Action(ActionSpec("joint_position", "right_arm", dimension=7),
                         {"positions": {**{f"arm.right.joint.{i}": 0.0 for i in range(6)},
                                        "unknown": 0.0}})
-        with self.assertRaises(ValueError):
+        with self.assertRaises(SafetyViolation):
             self.robot.command(action)
         self.assertEqual(self.backend.sent, [])
 

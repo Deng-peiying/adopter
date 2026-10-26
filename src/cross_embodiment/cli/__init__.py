@@ -24,7 +24,7 @@ from ..hardware.manifest import load_manifest
 from ..package.project import ProjectSpec, load_project
 from ..package.registry import LocalRegistry
 from ..package.resolver import PackageResolver, Resolution
-from ..sdk.robot import connect
+from ..sdk.factory import connect
 
 
 def _registry_root(project_path: Path, configured: Path | None = None) -> Path:

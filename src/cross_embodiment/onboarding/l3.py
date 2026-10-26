@@ -14,7 +14,7 @@ from ..package.loader import load_backend_entrypoint
 from ..hardware.manifest import load_manifest
 from ..package.manifest import PlatformInfo, load_package_manifest
 from ..runtime.installed import ResolvedInstalledRuntime, resolve_installed_runtime
-from ..sdk.robot import connect
+from ..sdk.factory import connect
 
 
 @dataclass(frozen=True)

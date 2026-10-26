@@ -6,7 +6,7 @@ import pytest
 from cross_embodiment.errors import LifecycleError
 from cross_embodiment.hardware.manifest import EmbodimentManifest
 from cross_embodiment.package.manifest import BackendSpec
-from cross_embodiment.sdk.robot import Robot
+from cross_embodiment.sdk.manipulator import ManipulatorRobot
 
 
 class RecordingAdapter:
@@ -21,7 +21,7 @@ class RecordingAdapter:
 
 
 def robot_with(adapter):
-    return Robot(adapter, EmbodimentManifest(schema_version='embodiment/v0.2', embodiment={}))
+    return ManipulatorRobot(adapter, EmbodimentManifest(schema_version='embodiment/v0.2', embodiment={}))
 
 
 def test_close_releases_connection_without_disabling_hardware():

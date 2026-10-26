@@ -25,6 +25,7 @@ class PackageIdentity:
     model: str
     device_id: str
     embodiment_type: str
+    profile: str
     backend_id: str
     backend_entrypoint: str
     ros_distro: str
@@ -100,6 +101,8 @@ class PackageGenerator:
         has no runtime mapping asset, connection defaults, or Backend
         entrypoint.
         """
+        if package_identity.profile not in {"manipulator", "quadruped"}:
+            raise ValueError("PackageIdentity.profile must be manipulator or quadruped")
         required = {"joint_position_state", "joint_position"}
         assessments = {item.capability_id: item for item in coverage.assessments}
         candidates = {item.capability_id: item for item in coverage.candidates}
@@ -260,7 +263,12 @@ class PackageGenerator:
         embodiment = {
             "schema_version": "embodiment/v0.2",
             "embodiment": {
+                "id": package_identity.package_name,
+                "name": package_identity.model,
+                "vendor": package_identity.vendor,
+                "model": package_identity.model,
                 "type": package_identity.embodiment_type,
+                "profile": package_identity.profile,
                 "dof": len(joints),
             },
             "devices": [{
@@ -587,6 +595,8 @@ class PackageGenerator:
         output_root: Path,
         package_identity: PackageIdentity,
     ) -> GeneratedPackage:
+        if package_identity.profile not in {"manipulator", "quadruped"}:
+            raise ValueError("PackageIdentity.profile must be manipulator or quadruped")
         required = {"joint_position_state", "joint_position"}
         assessments = {item.capability_id: item for item in coverage.assessments}
         candidates = {item.capability_id: item for item in coverage.candidates}
@@ -669,7 +679,15 @@ class PackageGenerator:
         ]
         embodiment = {
             "schema_version": "embodiment/v0.2",
-            "embodiment": {"type": package_identity.embodiment_type, "dof": len(joints)},
+            "embodiment": {
+                "id": package_identity.package_name,
+                "name": package_identity.model,
+                "vendor": package_identity.vendor,
+                "model": package_identity.model,
+                "type": package_identity.embodiment_type,
+                "profile": package_identity.profile,
+                "dof": len(joints),
+            },
             "devices": [{"id": package_identity.device_id, "type": "arm", "capabilities": ["joint_state", "joint_position"], "joints": device_joints}],
             "control": {"supported_modes": [{"type": "joint_position", "target": package_identity.device_id, "dimension": len(joints), "unit": "radian"}]},
             "adapter": {"backend": package_identity.backend_id},

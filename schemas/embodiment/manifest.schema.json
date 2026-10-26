@@ -6,7 +6,11 @@
   "required": ["schema_version", "embodiment", "devices"],
   "properties": {
     "schema_version": {"const": "embodiment/v0.2"},
-    "embodiment": {"type": "object", "required": ["id", "name", "vendor", "model"]},
+    "embodiment": {
+      "type": "object",
+      "required": ["id", "name", "vendor", "model", "profile"],
+      "properties": {"profile": {"enum": ["manipulator", "quadruped"]}}
+    },
     "frames": {"type": "object"},
     "devices": {"type": "array", "items": {"type": "object", "required": ["id", "type"]}},
     "control": {"type": "object"},

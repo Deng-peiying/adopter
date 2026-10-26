@@ -67,7 +67,7 @@ def inputs(conflict: bool = False):
     ), ())
     identity = PackageIdentity(
         package_name="generated/weiyi-right-arm", version="0.1.0", vendor="Weiyi",
-        model="dual_o6_right_arm", device_id="right_arm", embodiment_type="single_arm",
+        model="dual_o6_right_arm", device_id="right_arm", embodiment_type="single_arm", profile="manipulator",
         backend_id="ros2", backend_entrypoint="adapters.ros2.adapter:GeneratedAdapter",
         ros_distro="humble", os="linux", arch="x86_64",
     )
